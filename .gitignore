@@ -1,0 +1,14 @@
+# Build directories
+build*/
+bin/
+obj/
+
+# Qt generated files
+moc_*.cpp
+ui_*.h
+qrc_*.cpp
+*.pro.user
+
+# OS files
+.DS_Store
+Thumbs.db
