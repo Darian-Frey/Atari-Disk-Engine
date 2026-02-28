@@ -73,7 +73,7 @@ QModelIndex AtariFileSystemModel::index(int row, int column,
     return QModelIndex();
 
   Node *parentNode = nodeFromIndex(parent);
-  if (row < parentNode->children.size()) {
+  if (row >= 0 && static_cast<size_t>(row) < parentNode->children.size()) {
     return createIndex(row, column, parentNode->children[row].get());
   }
   return QModelIndex();
@@ -91,9 +91,9 @@ QModelIndex AtariFileSystemModel::parent(const QModelIndex &child) const {
 
   Node *grandParent = parentNode->parent;
   int row = 0;
-  for (int i = 0; i < grandParent->children.size(); ++i) {
+  for (size_t i = 0; i < grandParent->children.size(); ++i) {
     if (grandParent->children[i].get() == parentNode) {
-      row = i;
+      row = static_cast<int>(i);
       break;
     }
   }
