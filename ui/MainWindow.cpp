@@ -1,125 +1,115 @@
 #include "MainWindow.h"
 #include <QFileDialog>
 #include <QMessageBox>
-#include <QSplitter>
-#include <QVBoxLayout>
-#include <QMenuBar>
+#include <QHeaderView>
+#include <QDebug>
+#include <QLabel>
+#include <QStatusBar>
 #include <QToolBar>
-#include <QFileInfo>
 
 MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent),
-      m_model(new AtariFileSystemModel(this)) {
+    : QMainWindow(parent)
+{
     setupUi();
-    setupActions();
-    m_treeView->setModel(m_model);
 }
 
 void MainWindow::setupUi() {
-    auto *splitter = new QSplitter(this);
+    // 1. Core Engine and Model Setup
+    m_engine = new Atari::AtariDiskEngine();
+    m_model = new AtariFileSystemModel(this); // Matches candidate expecting 1 argument
+    m_model->setEngine(m_engine);             // Assuming your model has a setter
 
-    m_treeView = new QTreeView(splitter);
-    m_stackedWidget = new QStackedWidget(splitter);
+    // 2. Central Widget (Tree View)
+    m_treeView = new QTreeView(this);
+    m_treeView->setModel(m_model);
+    m_treeView->header()->setSectionResizeMode(QHeaderView::Stretch);
+    setCentralWidget(m_treeView);
 
-    // File Info Pane
-    m_infoWidget = new QWidget();
-    auto *infoLayout = new QVBoxLayout(m_infoWidget);
-    m_infoLabel = new QLabel(tr("Select a file or directory to view properties."));
-    m_infoLabel->setAlignment(Qt::AlignTop | Qt::AlignLeft);
-    infoLayout->addWidget(m_infoLabel);
+    // 3. Toolbar and Manual Sector Slider
+    QToolBar *toolBar = addToolBar("File");
+    QAction *openAction = toolBar->addAction("Open Atari Disk");
+    connect(openAction, &QAction::triggered, this, &MainWindow::onOpenFile);
+
+    toolBar->addSeparator();
     
-    // Hex Pane
-    m_hexView = new HexViewWidget();
+    // Manual Sector Controls
+    toolBar->addWidget(new QLabel(" Manual Root Sector: "));
+    m_sectorOverride = new QSpinBox(this);
+    m_sectorOverride->setRange(0, 500);
+    m_sectorOverride->setValue(11); // Atari ST standard default
+    toolBar->addWidget(m_sectorOverride);
 
-    m_stackedWidget->addWidget(m_infoWidget); // Index 0
-    m_stackedWidget->addWidget(m_hexView);    // Index 1
+    m_jumpBtn = new QPushButton("Force Jump", this);
+    toolBar->addWidget(m_jumpBtn);
+    connect(m_jumpBtn, &QPushButton::clicked, this, &MainWindow::onManualSectorJump);
 
-    splitter->setStretchFactor(0, 1);
-    splitter->setStretchFactor(1, 2);
-    setCentralWidget(splitter);
-    setWindowTitle(tr("Atari ST Toolkit"));
-    resize(1024, 768);
+    // 4. Status Bar and Format Labels
+    m_formatLabel = new QLabel("Mode: Unknown", this);
+    statusBar()->addPermanentWidget(m_formatLabel);
+
+    // 5. Connect Selection for Hex View (Future implementation)
+    connect(m_treeView, &QTreeView::clicked, this, &MainWindow::onFileSelected);
+
+    resize(800, 600);
+    setWindowTitle("Atari ST Toolkit — Latitude 5480 Edition");
 }
 
-void MainWindow::setupActions() {
-    auto *fileMenu = menuBar()->addMenu(tr("&File"));
-    auto *toolBar = addToolBar(tr("Main"));
+void MainWindow::onOpenFile() {
+    QString fileName = QFileDialog::getOpenFileName(this, "Open Atari Disk Image", "", "Atari Disks (*.st *.msa *.img)");
+    if (fileName.isEmpty()) return;
 
-    auto *openAct = new QAction(tr("&Open Image..."), this);
-    connect(openAct, &QAction::triggered, this, &MainWindow::on_actionOpen_triggered);
-    fileMenu->addAction(openAct);
-    toolBar->addAction(openAct);
-
-    m_actionExtract = new QAction(tr("&Extract File..."), this);
-    m_actionExtract->setEnabled(false);
-    connect(m_actionExtract, &QAction::triggered, this, &MainWindow::on_actionExtract_triggered);
-    fileMenu->addAction(m_actionExtract);
-    toolBar->addAction(m_actionExtract);
-
-    auto *bootAct = new QAction(tr("View &Boot Sector"), this);
-    connect(bootAct, &QAction::triggered, this, &MainWindow::on_actionViewBootSector_triggered);
-    fileMenu->addAction(bootAct);
-
-    connect(m_treeView, &QTreeView::clicked, this, &MainWindow::on_treeView_clicked);
-}
-
-void MainWindow::on_actionOpen_triggered() {
-    QString path = QFileDialog::getOpenFileName(this, tr("Open Atari ST Image"), "", tr("ST Images (*.st *.ST)"));
-    if (path.isEmpty()) return;
-
-    if (!m_engine.loadImage(path)) {
-        QMessageBox::critical(this, tr("Load Error"), m_engine.loadError());
+    QFile file(fileName);
+    if (!file.open(QIODevice::ReadOnly)) {
+        QMessageBox::critical(this, "Error", "Could not open file.");
         return;
     }
 
-    m_model->setEngine(&m_engine);
-    m_model->reload();
-    statusBar()->showMessage(tr("Loaded: %1").arg(QFileInfo(path).fileName()));
+    QByteArray data = file.readAll();
+    file.close();
+
+    // Load data into engine
+    std::vector<uint8_t> stdData(data.begin(), data.end());
+    m_engine->load(stdData);
+
+    onFileLoaded();
 }
 
-void MainWindow::on_treeView_clicked(const QModelIndex &index) {
-    const auto *entry = m_model->entryFromIndex(index);
-    if (!entry) return;
+void MainWindow::onFileLoaded() {
+    // 1. Trigger the Directory Analysis
+    m_engine->readRootDirectory();
 
-    showFileInfo(*entry);
+    // 2. Refresh the Tree Model
+    m_model->refresh();
+    m_treeView->expandAll();
 
-    if (entry->isDirectory()) {
-        m_stackedWidget->setCurrentIndex(0);
-        m_actionExtract->setEnabled(false);
+    // 3. Update UI Status based on Hatari-style detection
+    m_formatLabel->setText(m_engine->getFormatInfoString());
+    
+    if (m_engine->lastGeometryMode() == Atari::AtariDiskEngine::GeometryMode::HatariGuess) {
+        m_formatLabel->setStyleSheet("color: orange; font-weight: bold;");
+        statusBar()->showMessage("Warning: Non-standard geometry. Try Manual Sector Jump if empty.", 5000);
     } else {
-        QByteArray data = m_engine.readFileQt(*entry);
-        m_hexView->setBuffer(reinterpret_cast<const uint8_t*>(data.constData()), data.size());
-        m_stackedWidget->setCurrentIndex(1);
-        m_actionExtract->setEnabled(true);
+        m_formatLabel->setStyleSheet("color: green;");
+        statusBar()->showMessage("Disk Loaded Successfully.", 3000);
     }
 }
 
-void MainWindow::showFileInfo(const Atari::DirEntry &entry) {
-    QString info = tr("Name: %1\nSize: %2 bytes\nCluster: %3\nType: %4")
-        .arg(Atari::AtariDiskEngine::toQString(entry.getFilename()))
-        .arg(entry.getFileSize())
-        .arg(entry.getStartCluster())
-        .arg(entry.isDirectory() ? tr("Directory") : tr("File"));
-    m_infoLabel->setText(info);
+void MainWindow::onManualSectorJump() {
+    int targetSector = m_sectorOverride->value();
+    qDebug() << "[UI] User manually forcing Root Directory at Sector:" << targetSector;
+
+    // Call engine with manual override
+    m_engine->readRootDirectoryManual(targetSector);
+    
+    // Refresh UI
+    m_model->refresh();
+    m_treeView->expandAll();
+    
+    m_formatLabel->setText(QString("Manual Mode: Sector %1").arg(targetSector));
+    m_formatLabel->setStyleSheet("color: red; font-weight: bold;");
 }
 
-void MainWindow::on_actionViewBootSector_triggered() {
-    if (!m_engine.isLoaded()) return;
-    QByteArray boot = m_engine.getBootSector();
-    m_hexView->setBuffer(reinterpret_cast<const uint8_t*>(boot.constData()), boot.size(), 0);
-    m_stackedWidget->setCurrentIndex(1);
-}
-
-void MainWindow::on_actionExtract_triggered() {
-    const auto *entry = m_model->entryFromIndex(m_treeView->currentIndex());
-    if (!entry || entry->isDirectory()) return;
-
-    QString savePath = QFileDialog::getSaveFileName(this, tr("Extract File"), Atari::AtariDiskEngine::toQString(entry->getFilename()));
-    if (savePath.isEmpty()) return;
-
-    QFile outFile(savePath);
-    if (outFile.open(QIODevice::WriteOnly)) {
-        outFile.write(m_engine.readFileQt(*entry));
-        outFile.close();
-    }
+void MainWindow::onFileSelected(const QModelIndex &index) {
+    // Logic for updating the HexViewWidget goes here
+    qDebug() << "Selected item:" << index.data().toString();
 }

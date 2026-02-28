@@ -21,7 +21,6 @@ HEADERS += \
 SOURCES += \
     src/main.cpp \
     src/AtariDiskEngine.cpp \
-    src/AtariDiskEngine_QtBridge.cpp \
     src/AtariFileSystemModel.cpp \
     ui/MainWindow.cpp \
     ui/HexViewWidget.cpp
