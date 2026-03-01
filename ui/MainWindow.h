@@ -23,6 +23,7 @@ public:
 private slots:
   void onOpenFile();
   void onFileLoaded();
+  void onCloseFile();
   void onFileSelected(const QModelIndex &index);
 
 private:

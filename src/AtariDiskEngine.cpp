@@ -379,11 +379,15 @@ bool AtariDiskEngine::loadImage(const QString &path) {
   return true;
 }
 
-QByteArray AtariDiskEngine::getSector(uint32_t sectorIndex) const {
-  if (m_image.empty() || (sectorIndex + 1) * SECTOR_SIZE > m_image.size())
+QByteArray Atari::AtariDiskEngine::getSector(uint32_t sectorIndex) const {
+  if (m_image.empty())
     return QByteArray();
-  return QByteArray(reinterpret_cast<const char *>(m_image.data() +
-                                                   (sectorIndex * SECTOR_SIZE)),
+
+  uint32_t offset = m_internalOffset + (sectorIndex * SECTOR_SIZE);
+  if (offset + SECTOR_SIZE > m_image.size())
+    return QByteArray();
+
+  return QByteArray(reinterpret_cast<const char *>(m_image.data() + offset),
                     SECTOR_SIZE);
 }
 
@@ -413,6 +417,21 @@ bool Atari::AtariDiskEngine::isValidDirectoryEntry(const uint8_t *d) const {
       return false;
   }
   return true;
+}
+
+void Atari::AtariDiskEngine::load(const std::vector<uint8_t> &data) {
+  m_image = data;
+  m_internalOffset = 0;
+  m_useManualOverride = false;
+  m_geoMode = GeometryMode::Unknown;
+
+  if (m_image.empty()) {
+    qDebug() << "[ENGINE] Disk cleared.";
+    return; // Exit early without calling init() or validation
+  }
+
+  // Only run initialization if we actually have data
+  init();
 }
 
 } // namespace Atari

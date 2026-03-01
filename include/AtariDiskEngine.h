@@ -43,11 +43,7 @@ public:
   AtariDiskEngine(std::vector<uint8_t> imageData);
   AtariDiskEngine(const uint8_t *data, std::size_t byteCount);
 
-  void load(const std::vector<uint8_t> &data) {
-    m_image = data;
-    m_useManualOverride = false;
-    init();
-  }
+  void load(const std::vector<uint8_t> &data);
   bool isLoaded() const { return !m_image.empty(); }
 
   std::vector<DirEntry> readRootDirectory() const;

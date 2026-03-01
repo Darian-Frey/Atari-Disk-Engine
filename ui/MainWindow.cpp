@@ -1,8 +1,11 @@
 #include "MainWindow.h"
 #include "HexViewWidget.h"
+#include <QAction>
 #include <QDebug>
 #include <QFileDialog>
 #include <QHeaderView>
+#include <QMenu>
+#include <QMenuBar>
 #include <QSplitter>
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) { setupUi(); }
@@ -12,32 +15,80 @@ void MainWindow::setupUi() {
   m_model = new AtariFileSystemModel(this);
   m_model->setEngine(m_engine);
 
-  // Main Splitter for Tree and Hex View
+  // 1. Setup the Layout (Splitter for Tree and Hex View)
   QSplitter *splitter = new QSplitter(Qt::Horizontal, this);
-
   m_treeView = new QTreeView(this);
   m_treeView->setModel(m_model);
   m_treeView->header()->setSectionResizeMode(QHeaderView::Stretch);
 
   m_hexView = new HexViewWidget(this);
-
   splitter->addWidget(m_treeView);
   splitter->addWidget(m_hexView);
   splitter->setStretchFactor(1, 1);
   setCentralWidget(splitter);
 
-  // Toolbar
-  QToolBar *toolBar = addToolBar("File");
-  toolBar->addAction("Open Atari Disk", this, &MainWindow::onOpenFile);
+  // 2. CREATE THE DROP-DOWN FILE MENU
+  QMenu *fileMenu = menuBar()->addMenu("&File");
 
-  // Status
+  // Open Action
+  QAction *openAction =
+      new QAction(QIcon::fromTheme("document-open"), "&Open Disk...", this);
+  openAction->setShortcut(QKeySequence::Open);
+  connect(openAction, &QAction::triggered, this, &MainWindow::onOpenFile);
+  fileMenu->addAction(openAction);
+
+  // Close Action
+  QAction *closeAction = new QAction("&Close Image", this);
+  connect(closeAction, &QAction::triggered, this, &MainWindow::onCloseFile);
+  fileMenu->addAction(closeAction);
+
+  fileMenu->addSeparator();
+
+  // Exit Action
+  QAction *exitAction = new QAction("E&xit", this);
+  exitAction->setShortcut(QKeySequence::Quit);
+  connect(exitAction, &QAction::triggered, this, &QWidget::close);
+  fileMenu->addAction(exitAction);
+
+  // 3. Keep the Toolbar for quick access
+  QToolBar *toolBar = addToolBar("Main");
+  toolBar->addAction(openAction);
+
+  // 4. Status Bar
   m_formatLabel = new QLabel("Ready", this);
   statusBar()->addPermanentWidget(m_formatLabel);
 
   connect(m_treeView, &QTreeView::clicked, this, &MainWindow::onFileSelected);
 
-  resize(1000, 700);
-  setWindowTitle("Atari ST Toolkit — Lotus Edition");
+  resize(1100, 750);
+  setWindowTitle("Atari ST Toolkit");
+}
+
+// Add this new slot function below setupUi
+void MainWindow::onCloseFile() {
+  qDebug() << "[UI] Closing file...";
+
+  // 1. Clear the engine data
+  if (m_engine) {
+    m_engine->load({});
+  }
+
+  // 2. Clear the Hex View
+  if (m_hexView) {
+    m_hexView->setData(QByteArray());
+  }
+
+  // 3. Refresh the model (it will see the empty engine and clear the tree)
+  if (m_model) {
+    m_model->refresh();
+  }
+
+  // 4. Update UI labels
+  if (m_formatLabel) {
+    m_formatLabel->setText("No Disk Loaded");
+  }
+
+  setWindowTitle("Atari ST Toolkit");
 }
 
 void MainWindow::onOpenFile() {
