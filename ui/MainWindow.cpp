@@ -17,6 +17,11 @@
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) { setupUi(); }
 
 void MainWindow::setupUi() {
+  /**
+   * Initializes the core logic engine and the filesystem model.
+   * The model acts as the glue between the Atari FAT12 structures and the Qt
+   * TreeView.
+   */
   m_engine = new Atari::AtariDiskEngine();
   m_model = new AtariFileSystemModel(this);
   m_model->setEngine(m_engine);
@@ -30,24 +35,24 @@ void MainWindow::setupUi() {
   m_hexView = new HexViewWidget(this);
   splitter->addWidget(m_treeView);
   splitter->addWidget(m_hexView);
-  splitter->setStretchFactor(1, 1);
+  splitter->setStretchFactor(1, 1); // Allow hex view to expand more than tree
   setCentralWidget(splitter);
 
   // 2. CREATE THE DROP-DOWN FILE MENU
   QMenu *fileMenu = menuBar()->addMenu("&File");
 
-  // Open Action
+  // Open Action: Loads an image from disk
   QAction *openAction =
       new QAction(QIcon::fromTheme("document-open"), "&Open Disk...", this);
   openAction->setShortcut(QKeySequence::Open);
   connect(openAction, &QAction::triggered, this, &MainWindow::onOpenFile);
   fileMenu->addAction(openAction);
 
-  // Close Action
+  // Close Action: Resets the state
   QAction *closeAction = new QAction("&Close Image", this);
   connect(closeAction, &QAction::triggered, this, &MainWindow::onCloseFile);
 
-  // Save Action
+  // Save Action: Writes current memory image to a file
   QAction *saveAction = new QAction("&Save Disk As...", this);
   saveAction->setShortcut(QKeySequence::Save);
   connect(saveAction, &QAction::triggered, this, &MainWindow::onSaveDisk);
@@ -56,13 +61,13 @@ void MainWindow::setupUi() {
 
   fileMenu->addAction(closeAction);
 
-  // Extract Action
+  // Extract Action: Saves selected file to host system
   QAction *extractAction = new QAction("&Extract Selected File...", this);
   extractAction->setShortcut(QKeySequence(Qt::CTRL + Qt::Key_E));
   connect(extractAction, &QAction::triggered, this, &MainWindow::onExtractFile);
   fileMenu->addAction(extractAction);
 
-  // New Disk Action
+  // New Disk Action: Creates a blank 720K template
   QAction *newAction = new QAction("&New 720K Disk", this);
   newAction->setShortcut(QKeySequence::New);
   connect(newAction, &QAction::triggered, this, &MainWindow::onNewDisk);
@@ -76,7 +81,7 @@ void MainWindow::setupUi() {
   connect(exitAction, &QAction::triggered, this, &QWidget::close);
   fileMenu->addAction(exitAction);
 
-  // Inject Action
+  // Inject Action: Inserts a local file into the disk
   QAction *injectAction = new QAction("&Inject File TO Disk...", this);
   connect(injectAction, &QAction::triggered, this, &MainWindow::onInjectFile);
   fileMenu->insertAction(extractAction, injectAction);
@@ -85,7 +90,7 @@ void MainWindow::setupUi() {
   QToolBar *toolBar = addToolBar("Main");
   toolBar->addAction(openAction);
 
-  // 4. Status Bar
+  // 4. Status Bar: Displays disk geometry and status messages
   m_formatLabel = new QLabel("Ready", this);
   statusBar()->addPermanentWidget(m_formatLabel);
 
@@ -95,26 +100,22 @@ void MainWindow::setupUi() {
   setWindowTitle("Atari ST Toolkit");
 }
 
-// Add this new slot function below setupUi
 void MainWindow::onCloseFile() {
   qDebug() << "[UI] Closing file...";
 
-  // 1. Clear the engine data
+  // Reset engine, hex display, and tree model
   if (m_engine) {
     m_engine->load({});
   }
 
-  // 2. Clear the Hex View
   if (m_hexView) {
     m_hexView->setData(QByteArray());
   }
 
-  // 3. Refresh the model (it will see the empty engine and clear the tree)
   if (m_model) {
     m_model->refresh();
   }
 
-  // 4. Update UI labels
   if (m_formatLabel) {
     m_formatLabel->setText("No Disk Loaded");
   }
@@ -126,12 +127,13 @@ void MainWindow::onOpenFile() {
   QString fileName = QFileDialog::getOpenFileName(this, "Open Disk", "",
                                                   "Atari Disks (*.st *.msa)");
   if (!fileName.isEmpty() && m_engine->loadImage(fileName)) {
+    // Initial analysis of the disk structure
     m_engine->readRootDirectory();
     m_model->refresh();
     m_treeView->expandAll();
     m_formatLabel->setText(m_engine->getFormatInfoString());
 
-    // Show Boot Sector in Hex View by default
+    // Show Boot Sector (Sector 0) in Hex View by default
     m_hexView->setData(m_engine->getSector(0));
   }
 }
@@ -144,23 +146,15 @@ void MainWindow::onFileSelected(const QModelIndex &index) {
   QString name = Atari::AtariDiskEngine::toQString(entry.getFilename());
 
   if (entry.isDirectory()) {
-    qDebug() << "[UI-DEBUG] Directory selected:" << name
-             << ". Clearing Hex View.";
+    // We don't show hex for directories currently
     m_hexView->setData(QByteArray());
     return;
   }
 
-  qDebug() << "[UI-DEBUG] File Selected:" << name
-           << "Size:" << entry.getFileSize();
-
+  // Load file content using the engine's FAT traversal logic
   QByteArray fileData = m_engine->readFileQt(entry);
 
-  qDebug() << "[UI-DEBUG] Received QByteArray from Engine. Size:"
-           << fileData.size();
-
   if (fileData.isEmpty() && entry.getFileSize() > 0) {
-    qDebug()
-        << "[UI-DEBUG] ERROR: Engine returned empty data for non-empty file.";
     statusBar()->showMessage("Error: Could not read file data", 3000);
   } else {
     m_hexView->setData(fileData);
@@ -170,20 +164,20 @@ void MainWindow::onFileSelected(const QModelIndex &index) {
 }
 
 void MainWindow::onFileLoaded() {
-  // 1. Trigger the Hatari-style directory probing
+  /**
+   * Helper slot called when an image is loaded programmatically or
+   * after manual operations requiring a full UI refresh.
+   */
   m_engine->readRootDirectory();
-
-  // 2. Refresh the tree model to show the new files
   m_model->refresh();
-
-  // 3. Expand the tree so the user sees the files immediately
   m_treeView->expandAll();
-
-  // 4. Update the status bar with the disk format info
   m_formatLabel->setText(m_engine->getFormatInfoString());
 }
 
 void MainWindow::onExtractFile() {
+  /**
+   * Reads data from the virtual disk and writes it to a host file.
+   */
   QModelIndex index = m_treeView->currentIndex();
   if (!index.isValid()) {
     QMessageBox::warning(this, "Extract", "Please select a file first.");
@@ -222,6 +216,9 @@ void MainWindow::onExtractFile() {
 }
 
 void MainWindow::onNewDisk() {
+  /**
+   * Creates a fresh in-memory 720K master disk.
+   */
   if (m_engine->isLoaded()) {
     auto res = QMessageBox::question(
         this, "New Disk", "Clear current disk and create a new 720KB image?");
@@ -237,6 +234,9 @@ void MainWindow::onNewDisk() {
 }
 
 void MainWindow::onSaveDisk() {
+  /**
+   * Serializes the current m_image buffer to a file.
+   */
   if (!m_engine || !m_engine->isLoaded()) {
     QMessageBox::warning(this, "Save Disk", "No disk image in memory to save.");
     return;
@@ -249,14 +249,12 @@ void MainWindow::onSaveDisk() {
   if (savePath.isEmpty())
     return;
 
-  // Ensure it has the .st extension
   if (!savePath.endsWith(".st", Qt::CaseInsensitive)) {
     savePath += ".st";
   }
 
   QFile outFile(savePath);
   if (outFile.open(QIODevice::WriteOnly)) {
-    // Access the raw data from the engine
     const std::vector<uint8_t> &data = m_engine->getRawImageData();
     outFile.write(reinterpret_cast<const char *>(data.data()), data.size());
     outFile.close();
@@ -269,6 +267,9 @@ void MainWindow::onSaveDisk() {
 }
 
 void MainWindow::onInjectFile() {
+  /**
+   * Triggers the engine's file injection logic for the currently loaded disk.
+   */
   if (!m_engine->isLoaded())
     return;
 
