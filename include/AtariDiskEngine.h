@@ -16,6 +16,16 @@ inline constexpr uint16_t BOOT_CHECKSUM_TARGET = 0x1234;
 inline uint16_t readLE16(const uint8_t *p) { return p[0] | (p[1] << 8); }
 inline uint16_t readBE16(const uint8_t *p) { return (p[0] << 8) | p[1]; }
 
+inline void writeLE16(uint8_t *p, uint16_t val) {
+  p[0] = val & 0xFF;
+  p[1] = (val >> 8) & 0xFF;
+}
+
+inline void writeBE16(uint8_t *p, uint16_t val) {
+  p[0] = (val >> 8) & 0xFF;
+  p[1] = val & 0xFF;
+}
+
 struct DirEntry {
   uint8_t name[8];
   uint8_t ext[3];
@@ -37,6 +47,7 @@ struct DirEntry {
 
 class AtariDiskEngine {
 public:
+  bool injectFile(const QString &localPath);
   enum class GeometryMode { Unknown, BPB, HatariGuess };
 
   QByteArray readFileQt(const DirEntry &entry) const;
@@ -72,6 +83,14 @@ private:
   uint32_t fat1Offset() const noexcept;
   uint32_t clusterOffset(uint16_t cluster) const noexcept;
   uint16_t getNextCluster(uint16_t currentCluster) const noexcept;
+
+  // Writing helpers (member versions to match common usage in this class)
+  void writeLE16(uint8_t *p, uint16_t val) const noexcept {
+    Atari::writeLE16(p, val);
+  }
+  void writeBE16(uint8_t *p, uint16_t val) const noexcept {
+    Atari::writeBE16(p, val);
+  }
   std::vector<uint16_t> getClusterChain(uint16_t startCluster) const;
 
   std::vector<uint8_t> m_image;
@@ -79,6 +98,11 @@ private:
   mutable GeometryMode m_geoMode = GeometryMode::Unknown;
   uint32_t m_manualRootSector = 11;
   bool m_useManualOverride = false;
+
+  void writeLE16(uint8_t *ptr, uint16_t val);
+  void writeLE32(uint8_t *ptr, uint32_t val);
+  int findFreeCluster() const;
+  void setFATEntry(int cluster, uint16_t value);
 };
 
 } // namespace Atari

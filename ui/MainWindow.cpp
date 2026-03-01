@@ -76,6 +76,11 @@ void MainWindow::setupUi() {
   connect(exitAction, &QAction::triggered, this, &QWidget::close);
   fileMenu->addAction(exitAction);
 
+  // Inject Action
+  QAction *injectAction = new QAction("&Inject File TO Disk...", this);
+  connect(injectAction, &QAction::triggered, this, &MainWindow::onInjectFile);
+  fileMenu->insertAction(extractAction, injectAction);
+
   // 3. Keep the Toolbar for quick access
   QToolBar *toolBar = addToolBar("Main");
   toolBar->addAction(openAction);
@@ -132,24 +137,36 @@ void MainWindow::onOpenFile() {
 }
 
 void MainWindow::onFileSelected(const QModelIndex &index) {
-  qDebug() << "[UI] File Selected. Index Row:" << index.row();
+  if (!index.isValid())
+    return;
 
   Atari::DirEntry entry = m_model->getEntry(index);
+  QString name = Atari::AtariDiskEngine::toQString(entry.getFilename());
 
   if (entry.isDirectory()) {
-    qDebug() << "[UI] Item is a directory. Skipping Hex View.";
+    qDebug() << "[UI-DEBUG] Directory selected:" << name
+             << ". Clearing Hex View.";
+    m_hexView->setData(QByteArray());
     return;
   }
+
+  qDebug() << "[UI-DEBUG] File Selected:" << name
+           << "Size:" << entry.getFileSize();
 
   QByteArray fileData = m_engine->readFileQt(entry);
 
-  if (fileData.isEmpty() && entry.getFileSize() > 0) {
-    qDebug() << "[UI] ERROR: Engine returned empty data for non-empty file.";
-    return;
-  }
+  qDebug() << "[UI-DEBUG] Received QByteArray from Engine. Size:"
+           << fileData.size();
 
-  qDebug() << "[UI] Updating Hex View with" << fileData.size() << "bytes.";
-  m_hexView->setData(fileData);
+  if (fileData.isEmpty() && entry.getFileSize() > 0) {
+    qDebug()
+        << "[UI-DEBUG] ERROR: Engine returned empty data for non-empty file.";
+    statusBar()->showMessage("Error: Could not read file data", 3000);
+  } else {
+    m_hexView->setData(fileData);
+    statusBar()->showMessage(
+        QString("Viewing %1 (%2 bytes)").arg(name).arg(fileData.size()));
+  }
 }
 
 void MainWindow::onFileLoaded() {
@@ -248,5 +265,23 @@ void MainWindow::onSaveDisk() {
     setWindowTitle("Atari ST Toolkit - " + QFileInfo(savePath).fileName());
   } else {
     QMessageBox::critical(this, "Error", "Could not write disk image to file.");
+  }
+}
+
+void MainWindow::onInjectFile() {
+  if (!m_engine->isLoaded())
+    return;
+
+  QString localFile =
+      QFileDialog::getOpenFileName(this, "Select File to Inject");
+  if (localFile.isEmpty())
+    return;
+
+  if (m_engine->injectFile(localFile)) {
+    m_model->refresh();
+    statusBar()->showMessage("File injected successfully", 3000);
+  } else {
+    QMessageBox::critical(this, "Error",
+                          "Failed to inject file. Disk might be full.");
   }
 }

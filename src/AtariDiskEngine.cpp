@@ -7,6 +7,7 @@
 #include <QByteArray>
 #include <QDebug>
 #include <QFile>
+#include <QFileInfo>
 #include <QIODevice>
 #include <QString>
 #include <algorithm>
@@ -90,53 +91,36 @@ uint32_t AtariDiskEngine::fat1Offset() const noexcept {
 
 uint32_t
 Atari::AtariDiskEngine::clusterOffset(uint16_t cluster) const noexcept {
-  if (m_image.empty())
+  if (m_image.empty() || cluster < 2)
     return 0;
-  if (cluster < 2)
-    cluster = 2; // Treat reserved clusters as the start of data
 
-  // 1. Default fallback (Standard Atari ST 720KB layout)
+  // Standard 720KB Offset: Boot(1) + FATs(10) + Root(7) = 18
   uint32_t dataStartSector = 18;
 
-  // 2. Logic for Standard Disks (using the BPB from the Boot Sector)
   if (m_geoMode == GeometryMode::BPB) {
     const uint8_t *base = m_image.data() + m_internalOffset;
-    uint16_t reserved = readLE16(base + 0x0B);
-    uint8_t fatCount = base[0x10]; // Note: index 0x10 is standard for FAT count
-    uint16_t fatSize =
-        readLE16(base + 0x16); // Note: index 0x16 is standard for FAT size
-    uint16_t maxEntries =
-        readLE16(base + 0x11); // Note: index 0x11 is standard for Root size
+    uint16_t reserved = readLE16(base + 0x0E);
+    uint8_t fatCount = base[0x10];
+    uint16_t fatSize = readLE16(base + 0x16);
+    uint16_t maxRoot = readLE16(base + 0x11);
 
-    // Swap to Big-Endian if values look like garbage (typical for some Atari
-    // formats)
-    if (reserved > 500 || reserved == 0) {
-      reserved = readBE16(base + 0x0B);
+    // Atari Endian Swap Check
+    if (reserved == 0 || reserved > 500) {
+      reserved = readBE16(base + 0x0E);
       fatSize = readBE16(base + 0x16);
-      maxEntries = readBE16(base + 0x11);
+      maxRoot = readBE16(base + 0x11);
     }
-
-    uint32_t rootDirSectors = ((maxEntries * 32) + 511) / 512;
-    dataStartSector = reserved + (fatCount * fatSize) + rootDirSectors;
-  }
-  // 3. Logic for the Vectronix Disk (Sector 7 discovery)
-  else if (m_geoMode == GeometryMode::HatariGuess) {
-    // If the directory was found at Sector 7, data usually starts 7 sectors
-    // later
+    uint32_t rootSectors = ((maxRoot * 32) + 511) / 512;
+    dataStartSector = reserved + (fatCount * fatSize) + rootSectors;
+  } else if (m_geoMode == GeometryMode::HatariGuess) {
     dataStartSector = 14;
   }
 
-  // 4. Manual Override (if you decide to bring the slider/input back later)
-  if (m_useManualOverride) {
-    dataStartSector = m_manualRootSector + 7;
-  }
-
-  // Standard Atari disks use 2 sectors per cluster.
-  // Compact disks (HatariGuess) often use 1 sector per cluster.
-  uint32_t sectorsPerCluster = (m_geoMode == GeometryMode::HatariGuess) ? 1 : 2;
+  // SPC (Sectors Per Cluster): 720K uses 2. Compact/Vectronix uses 1.
+  uint32_t spc = (m_geoMode == GeometryMode::HatariGuess) ? 1 : 2;
 
   return m_internalOffset +
-         (dataStartSector + (cluster - 2) * sectorsPerCluster) * SECTOR_SIZE;
+         (dataStartSector + (cluster - 2) * spc) * SECTOR_SIZE;
 }
 
 // =============================================================================
@@ -148,97 +132,100 @@ std::vector<Atari::DirEntry> Atari::AtariDiskEngine::readRootDirectory() const {
   if (!isLoaded())
     return entries;
 
-  // 1. Force Alignment
   auto *self = const_cast<AtariDiskEngine *>(this);
-  self->m_internalOffset = 0;
-  const uint8_t *d = m_image.data();
-
-  qDebug() << "[DIAG] Starting Sector-Aligned Brute Scan...";
+  const uint8_t *d = m_image.data() + m_internalOffset;
 
   uint32_t foundOffset = 0;
+  bool standardBpbFound = false;
 
-  // 2. Scan sectors for the directory start (Sector 1 to 300)
-  for (uint32_t sector = 1; sector < 300; ++sector) {
-    uint32_t probeOffset = sector * SECTOR_SIZE;
-    if (probeOffset + DIRENT_SIZE > m_image.size())
-      break;
+  // 1. Check for Standard BPB (Sector 0)
+  // A standard Atari ST 720K disk has 1 reserved sector, 2 FATs, and 7 root
+  // sectors. We check if reserved sectors (at 0x0E) is 1 or 2 (Atari standard).
+  uint16_t reservedSectors = readLE16(d + 0x0E);
+  if (reservedSectors == 0 || reservedSectors > 500) {
+    reservedSectors = readBE16(d + 0x0E); // Check Big-Endian
+  }
 
-    const uint8_t *ptr = d + probeOffset;
+  if (reservedSectors > 0 && reservedSectors < 10) {
+    uint8_t fatCount = d[0x10];
+    uint16_t fatSize = readLE16(d + 0x16);
+    if (fatSize == 0 || fatSize > 500)
+      fatSize = readBE16(d + 0x16);
 
-    // Sniffer: Look for a valid entry (Alphanumeric name + Valid attribute)
-    bool hasValidAttr = (ptr[11] == 0x00 || ptr[11] == 0x20 || ptr[11] == 0x10);
-    bool hasValidName =
-        (ptr[0] >= 'A' && ptr[0] <= 'Z') || (ptr[0] >= '0' && ptr[0] <= '9');
-
-    if (hasValidName && hasValidAttr) {
-      foundOffset = probeOffset;
-      self->m_geoMode = GeometryMode::HatariGuess;
-      qDebug() << "[DIAG] SUCCESS: Aligned Directory found at Sector" << sector
-               << "Offset:" << QString::number(foundOffset, 16).toUpper();
-      break;
+    if (fatCount > 0 && fatCount <= 2 && fatSize > 0) {
+      self->m_geoMode = GeometryMode::BPB;
+      foundOffset = (reservedSectors + (fatCount * fatSize)) * SECTOR_SIZE;
+      standardBpbFound = true;
+      qDebug() << "[DIAG] Standard BPB Detected. Root at Sector:"
+               << (foundOffset / SECTOR_SIZE);
     }
   }
 
-  // Fallback to standard Sector 11 if scan fails
-  if (foundOffset == 0) {
-    qDebug() << "[DIAG] Aligned scan failed. Defaulting to Sector 11.";
-    foundOffset = 11 * SECTOR_SIZE;
+  // 2. Fallback: Brute Scan (for Vectronix/Compact disks)
+  if (!standardBpbFound) {
+    qDebug() << "[DIAG] No standard BPB found. Starting Brute Scan...";
+    for (uint32_t sector = 1; sector < 300; ++sector) {
+      uint32_t probeOffset = sector * SECTOR_SIZE;
+      if (probeOffset + 32 > m_image.size())
+        break;
+
+      const uint8_t *ptr = d + probeOffset;
+      // Check for valid filename start and attribute byte
+      bool hasValidName =
+          (ptr[0] >= 'A' && ptr[0] <= 'Z') || (ptr[0] >= '0' && ptr[0] <= '9');
+      bool hasValidAttr = (ptr[11] <= 0x3F);
+
+      if (hasValidName && hasValidAttr) {
+        foundOffset = probeOffset;
+        self->m_geoMode = GeometryMode::HatariGuess;
+        qDebug() << "[DIAG] SUCCESS: Aligned Directory found via Brute Scan at "
+                    "Sector"
+                 << sector;
+        break;
+      }
+    }
   }
 
-  // 3. Parse Entries with "Garbage Detection"
-  const uint8_t *dirPtr = d + foundOffset;
+  // Default fallback if everything fails
+  if (foundOffset == 0) {
+    qDebug() << "[DIAG] All discovery failed. Defaulting to Sector 11.";
+    foundOffset = 11 * SECTOR_SIZE;
+    self->m_geoMode = GeometryMode::BPB;
+  }
 
+  // 3. Parse the entries
+  const uint8_t *dirPtr = d + foundOffset;
   for (int i = 0; i < 112; ++i) {
     uint32_t entryPos = i * 32;
     if (foundOffset + entryPos + 32 > m_image.size())
       break;
 
     const uint8_t *p = dirPtr + entryPos;
-
-    // Hard Stop: First byte is 0x00 (End of list)
     if (p[0] == 0x00)
-      break;
-
-    // Skip deleted: First byte is 0xE5
+      break; // End of list
     if (p[0] == 0xE5)
-      continue;
+      continue; // Deleted
 
-    // GARBAGE FILTER: Check if the name contains non-printable characters
-    // FastCopy disks don't always clear the rest of the sector, leaving game
-    // code behind.
+    // Garbage Filter
     bool isGarbage = false;
     for (int j = 0; j < 8; ++j) {
-      // If we see characters outside the printable ASCII range or lowercase
-      // (Atari uses CAPS)
-      if (p[j] != ' ' && (p[j] < 33 || p[j] > 122)) {
+      if (p[j] != ' ' && (p[j] < 32 || p[j] > 126)) {
         isGarbage = true;
         break;
       }
     }
-
-    if (isGarbage) {
-      qDebug() << "[DIAG] Garbage/Code detected at entry" << i
-               << ". Stopping parse.";
+    if (isGarbage)
       break;
-    }
-
-    // Final Attribute check to ensure it's not a false positive
-    if (p[11] > 0x3F) { // Attributes higher than this are impossible in FAT12
-      qDebug() << "[DIAG] Invalid attribute" << p[11]
-               << "detected. Stopping parse.";
-      break;
-    }
 
     DirEntry entry;
     std::memcpy(&entry, p, 32);
-
-    // Filter out volume labels (0x08)
-    if (!(entry.attr & 0x08)) {
+    if (!(entry.attr & 0x08)) { // Skip volume labels
       entries.push_back(entry);
     }
   }
 
-  qDebug() << "[DIAG] Parsed" << entries.size() << "clean entries.";
+  qDebug() << "[DIAG] Parsed" << entries.size()
+           << "clean entries. Mode:" << (int)m_geoMode;
   return entries;
 }
 
@@ -257,16 +244,40 @@ AtariDiskEngine::getNextCluster(uint16_t currentCluster) const noexcept {
 }
 
 std::vector<uint16_t>
-AtariDiskEngine::getClusterChain(uint16_t startCluster) const {
+Atari::AtariDiskEngine::getClusterChain(uint16_t startCluster) const {
   std::vector<uint16_t> chain;
-  uint16_t current = startCluster;
-  const size_t maxClusters = m_image.size() / SECTOR_SIZE;
-  while (current >= 2 && current < 0xFF8) {
-    chain.push_back(current);
-    current = getNextCluster(current);
-    if (chain.size() > maxClusters)
-      break;
+
+  if (m_image.empty() || startCluster < 2 || startCluster >= 0xFF0) {
+    return chain;
   }
+
+  uint16_t current = startCluster;
+  const uint8_t *img = m_image.data() + m_internalOffset;
+  uint32_t fatOffset = 1 * SECTOR_SIZE;
+
+  while (current >= 2 && current < 0xFF0) {
+    chain.push_back(current);
+
+    // FAT12 Entry Calculation
+    uint32_t idx = (current * 3) / 2;
+    if (fatOffset + idx + 1 >= m_image.size())
+      break;
+
+    uint16_t next;
+    if (current % 2 == 0) {
+      next = img[fatOffset + idx] | ((img[fatOffset + idx + 1] & 0x0F) << 8);
+    } else {
+      next = (img[fatOffset + idx] >> 4) | (img[fatOffset + idx + 1] << 4);
+    }
+
+    if (next >= 0xFF8 || next == 0x000)
+      break; // End or unallocated
+    if (next == current || chain.size() > 1440)
+      break; // Loop safety
+
+    current = next;
+  }
+
   return chain;
 }
 
@@ -276,7 +287,7 @@ Atari::AtariDiskEngine::readSubDirectory(uint16_t startCluster) const {
   uint32_t offset = clusterOffset(startCluster);
 
   qDebug() << "[ENGINE] Reading Sub-Directory at Cluster" << startCluster
-           << "Offset" << hex << offset;
+           << "Offset" << Qt::hex << offset;
 
   if (offset + DIRENT_SIZE > m_image.size())
     return entries;
@@ -317,39 +328,75 @@ Atari::AtariDiskEngine::readFile(const DirEntry &entry) const {
   uint32_t fileSize = entry.getFileSize();
   uint16_t startCluster = entry.getStartCluster();
 
-  qDebug() << "[ENGINE] readFile called for cluster" << startCluster << "size"
-           << fileSize;
+  qDebug() << "[TRACE-START] File:" << toQString(entry.getFilename())
+           << "Size:" << fileSize;
 
-  if (fileSize == 0)
+  if (fileSize == 0 || m_image.empty())
     return {};
-  if (fileSize > 20 * 1024 * 1024) { // 20MB Safety Cap for Atari Disks
-    qDebug() << "[ENGINE] Error: File size is suspiciously large.";
+
+  // Standard Atari ST limit (2MB) - adjust if you handle larger HD images later
+  if (fileSize > 4 * 1024 * 1024) {
+    qDebug() << "[TRACE-ERROR] File size suspiciously large:" << fileSize;
     return {};
   }
 
   std::vector<uint8_t> data;
+  data.reserve(fileSize);
+
   auto chain = getClusterChain(startCluster);
 
-  qDebug() << "[ENGINE] Cluster chain resolved. Length:" << chain.size();
+  // GEOMETRY LOGIC:
+  // Standard BPB = 2 sectors per cluster (1024 bytes).
+  // HatariGuess (Compact) = 1 sector per cluster (512 bytes).
+  uint32_t spc = 2;
+  if (m_geoMode == GeometryMode::HatariGuess) {
+    spc = 1;
+    qDebug() << "[TRACE-GEO] Mode is HatariGuess -> Using 1 sector per cluster";
+  } else {
+    spc = 2;
+    qDebug()
+        << "[TRACE-GEO] Mode is BPB/Standard -> Using 2 sectors per cluster";
+  }
 
-  for (uint16_t cluster : chain) {
-    uint32_t offset = clusterOffset(cluster);
-    if (offset + SECTOR_SIZE > m_image.size()) {
-      qDebug() << "[ENGINE] CRITICAL: Cluster" << cluster
-               << "is out of bounds at offset" << offset;
-      break;
+  qDebug() << "[TRACE-CHAIN] Cluster Chain length:" << chain.size()
+           << "clusters.";
+
+  for (size_t cIdx = 0; cIdx < chain.size(); ++cIdx) {
+    uint16_t cluster = chain[cIdx];
+    uint32_t clusterBase = clusterOffset(cluster);
+
+    qDebug() << "[TRACE-CLUSTER] Chain Pos:" << cIdx << "Cluster ID:" << cluster
+             << "Offset:" << hex << clusterBase;
+
+    for (uint32_t s = 0; s < spc; ++s) {
+      uint32_t sectorOffset = clusterBase + (s * SECTOR_SIZE);
+      uint32_t currentSize = data.size();
+      uint32_t remaining = fileSize - currentSize;
+      uint32_t toRead = std::min((uint32_t)SECTOR_SIZE, remaining);
+
+      if (toRead > 0) {
+        if (sectorOffset + toRead <= m_image.size()) {
+          const uint8_t *ptr = m_image.data() + sectorOffset;
+          data.insert(data.end(), ptr, ptr + toRead);
+
+          qDebug() << "  [TRACE-SECTOR] Cluster:" << dec << cluster
+                   << "Sec:" << s << "Phys:" << hex << sectorOffset
+                   << "Read:" << dec << toRead << "Total:" << data.size();
+        } else {
+          qDebug() << "  [TRACE-ERROR] Phys offset" << hex << sectorOffset
+                   << "out of bounds!";
+          break;
+        }
+      }
+
+      if (data.size() >= fileSize)
+        break;
     }
-
-    // Safety: only read what we need
-    uint32_t toRead =
-        std::min((uint32_t)SECTOR_SIZE, fileSize - (uint32_t)data.size());
-    const uint8_t *ptr = m_image.data() + offset;
-    data.insert(data.end(), ptr, ptr + toRead);
-
     if (data.size() >= fileSize)
       break;
   }
 
+  qDebug() << "[TRACE-END] Final read size:" << data.size() << "/" << fileSize;
   return data;
 }
 
@@ -476,6 +523,88 @@ void Atari::AtariDiskEngine::createNew720KImage() {
   m_geoMode = GeometryMode::BPB;
   m_internalOffset = 0;
   qDebug() << "[ENGINE] New 720KB Disk Created in RAM.";
+}
+
+void Atari::AtariDiskEngine::writeLE16(uint8_t *ptr, uint16_t val) {
+  ptr[0] = val & 0xFF;
+  ptr[1] = (val >> 8) & 0xFF;
+}
+
+void Atari::AtariDiskEngine::writeLE32(uint8_t *ptr, uint32_t val) {
+  ptr[0] = val & 0xFF;
+  ptr[1] = (val >> 8) & 0xFF;
+  ptr[2] = (val >> 16) & 0xFF;
+  ptr[3] = (val >> 24) & 0xFF;
+}
+
+bool Atari::AtariDiskEngine::injectFile(const QString &localPath) {
+  QFile file(localPath);
+  if (!file.open(QIODevice::ReadOnly))
+    return false;
+  QByteArray fileData = file.readAll();
+
+  // Safety check: Don't inject more than the disk can hold
+  if (fileData.size() > 700 * 1024)
+    return false;
+
+  QFileInfo info(localPath);
+  QString baseName = info.baseName().toUpper().left(8).leftJustified(8, ' ');
+  QString ext = info.suffix().toUpper().left(3).leftJustified(3, ' ');
+
+  // 1. Root Directory is at Sector 11 (Standard for our New 720K)
+  uint32_t rootOffset = 11 * SECTOR_SIZE;
+  int entryIndex = -1;
+  for (int i = 0; i < 112; ++i) {
+    if (m_image[rootOffset + (i * 32)] == 0x00) {
+      entryIndex = i;
+      break;
+    }
+  }
+  if (entryIndex == -1)
+    return false;
+
+  // 2. Data starts at Cluster 2 (Sector 18)
+  uint16_t startCluster = 2;
+  uint32_t clustersNeeded =
+      (fileData.size() + 1023) / 1024; // 2 sectors per cluster
+
+  // 3. FAT12 WRITER - Corrected bit-masking
+  uint32_t fatOffset = 1 * SECTOR_SIZE;
+  for (uint32_t i = 0; i < clustersNeeded; ++i) {
+    uint16_t current = startCluster + i;
+    uint16_t next = (i == clustersNeeded - 1) ? 0xFFF : (current + 1);
+
+    uint32_t idx = (current * 3) / 2;
+    if (current % 2 == 0) {
+      m_image[fatOffset + idx] = next & 0xFF;
+      m_image[fatOffset + idx + 1] =
+          (m_image[fatOffset + idx + 1] & 0xF0) | ((next >> 8) & 0x0F);
+    } else {
+      m_image[fatOffset + idx] =
+          (m_image[fatOffset + idx] & 0x0F) | ((next << 4) & 0xF0);
+      m_image[fatOffset + idx + 1] = (next >> 4) & 0xFF;
+    }
+  }
+  // Mirror to FAT2 (Sector 6)
+  std::memcpy(&m_image[6 * SECTOR_SIZE], &m_image[1 * SECTOR_SIZE],
+              5 * SECTOR_SIZE);
+
+  // 4. Directory Entry
+  uint8_t *entryPtr = &m_image[rootOffset + (entryIndex * 32)];
+  std::memcpy(entryPtr, baseName.toStdString().c_str(), 8);
+  std::memcpy(entryPtr + 8, ext.toStdString().c_str(), 3);
+  entryPtr[11] = 0x20; // Archive
+  writeLE16(entryPtr + 26, startCluster);
+  writeLE32(entryPtr + 28, fileData.size());
+
+  // 5. Data Copy
+  uint32_t physOffset = (18 * SECTOR_SIZE); // Force Sector 18 for Cluster 2
+  if (physOffset + fileData.size() <= m_image.size()) {
+    std::memcpy(&m_image[physOffset], fileData.data(), fileData.size());
+  }
+
+  qDebug() << "[ENGINE] Injected" << baseName << "at Cluster 2 (Sector 18)";
+  return true;
 }
 
 } // namespace Atari

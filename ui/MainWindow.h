@@ -28,6 +28,7 @@ private slots:
   void onFileSelected(const QModelIndex &index);
   void onExtractFile();
   void onNewDisk();
+  void onInjectFile();
 
 private:
   void setupUi();
