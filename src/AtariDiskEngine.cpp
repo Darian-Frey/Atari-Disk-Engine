@@ -434,4 +434,13 @@ void Atari::AtariDiskEngine::load(const std::vector<uint8_t> &data) {
   init();
 }
 
+QByteArray Atari::AtariDiskEngine::readFileQt(const DirEntry &entry) const {
+  std::vector<uint8_t> buffer = readFile(entry);
+  if (buffer.empty())
+    return QByteArray();
+
+  return QByteArray(reinterpret_cast<const char *>(buffer.data()),
+                    buffer.size());
+}
+
 } // namespace Atari

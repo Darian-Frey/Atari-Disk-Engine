@@ -25,6 +25,7 @@ private slots:
   void onFileLoaded();
   void onCloseFile();
   void onFileSelected(const QModelIndex &index);
+  void onExtractFile();
 
 private:
   void setupUi();

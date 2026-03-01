@@ -1,6 +1,8 @@
 #include "HexViewWidget.h"
 #include <QFontDatabase>
+#include <QLatin1Char>
 #include <QString>
+#include <QTextCursor>
 
 HexViewWidget::HexViewWidget(QWidget *parent)
     : QWidget(parent), m_textEdit(new QPlainTextEdit(this)) {

@@ -39,6 +39,8 @@ class AtariDiskEngine {
 public:
   enum class GeometryMode { Unknown, BPB, HatariGuess };
 
+  QByteArray readFileQt(const DirEntry &entry) const;
+
   AtariDiskEngine() = default;
   AtariDiskEngine(std::vector<uint8_t> imageData);
   AtariDiskEngine(const uint8_t *data, std::size_t byteCount);
@@ -52,7 +54,6 @@ public:
 
   bool loadImage(const QString &path);
   QByteArray getSector(uint32_t sectorIndex) const;
-  QByteArray readFileQt(const DirEntry &entry) const;
 
   GeometryMode lastGeometryMode() const { return m_geoMode; }
   QString getFormatInfoString() const;

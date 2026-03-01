@@ -1,5 +1,6 @@
 #include "AtariFileSystemModel.h"
 #include <QDebug>
+#include <QRegExp>
 
 AtariFileSystemModel::AtariFileSystemModel(QObject *parent)
     : QAbstractItemModel(parent), m_engine(nullptr) {

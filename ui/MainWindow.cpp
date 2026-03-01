@@ -2,10 +2,16 @@
 #include "HexViewWidget.h"
 #include <QAction>
 #include <QDebug>
+#include <QDir>
+#include <QFile>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QHeaderView>
+#include <QIcon>
+#include <QKeySequence>
 #include <QMenu>
 #include <QMenuBar>
+#include <QMessageBox>
 #include <QSplitter>
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) { setupUi(); }
@@ -41,6 +47,12 @@ void MainWindow::setupUi() {
   QAction *closeAction = new QAction("&Close Image", this);
   connect(closeAction, &QAction::triggered, this, &MainWindow::onCloseFile);
   fileMenu->addAction(closeAction);
+
+  // Extract Action
+  QAction *extractAction = new QAction("&Extract Selected File...", this);
+  extractAction->setShortcut(QKeySequence(Qt::CTRL + Qt::Key_E));
+  connect(extractAction, &QAction::triggered, this, &MainWindow::onExtractFile);
+  fileMenu->addAction(extractAction);
 
   fileMenu->addSeparator();
 
@@ -138,4 +150,42 @@ void MainWindow::onFileLoaded() {
 
   // 4. Update the status bar with the disk format info
   m_formatLabel->setText(m_engine->getFormatInfoString());
+}
+
+void MainWindow::onExtractFile() {
+  QModelIndex index = m_treeView->currentIndex();
+  if (!index.isValid()) {
+    QMessageBox::warning(this, "Extract", "Please select a file first.");
+    return;
+  }
+
+  Atari::DirEntry entry = m_model->getEntry(index);
+  if (entry.isDirectory()) {
+    QMessageBox::warning(this, "Extract", "Cannot extract a directory.");
+    return;
+  }
+
+  QString originalName =
+      Atari::AtariDiskEngine::toQString(entry.getFilename()).trimmed();
+  QString savePath = QFileDialog::getSaveFileName(
+      this, "Extract File", QDir::homePath() + "/" + originalName);
+
+  if (savePath.isEmpty())
+    return;
+
+  QByteArray data = m_engine->readFileQt(entry);
+  if (data.isEmpty() && entry.getFileSize() > 0) {
+    QMessageBox::critical(this, "Error",
+                          "Failed to read data from disk image.");
+    return;
+  }
+
+  QFile outFile(savePath);
+  if (outFile.open(QIODevice::WriteOnly)) {
+    outFile.write(data);
+    outFile.close();
+    statusBar()->showMessage("Extracted to " + savePath, 3000);
+  } else {
+    QMessageBox::critical(this, "Error", "Could not write to local file.");
+  }
 }
