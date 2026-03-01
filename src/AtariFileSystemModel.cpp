@@ -1,71 +1,97 @@
-#include "../include/AtariFileSystemModel.h"
+#include "AtariFileSystemModel.h"
+#include <QDebug>
 
 AtariFileSystemModel::AtariFileSystemModel(QObject *parent)
-    : QAbstractItemModel(parent), m_root(std::make_unique<Node>()) {
-  m_root->parent = nullptr;
-  m_root->entry.name[0] = '/'; // Conceptual root
+    : QAbstractItemModel(parent), m_engine(nullptr) {
+  // Initialize with an empty root node
+  m_root = std::make_unique<Node>();
 }
 
 void AtariFileSystemModel::setEngine(Atari::AtariDiskEngine *engine) {
-  beginResetModel();
   m_engine = engine;
   buildTree();
-  endResetModel();
-}
-
-void AtariFileSystemModel::reload() {
-  if (!m_engine)
-    return;
-  beginResetModel();
-  buildTree();
-  endResetModel();
 }
 
 void AtariFileSystemModel::buildTree() {
-  m_root->children.clear();
-  if (!m_engine || !m_engine->isLoaded())
-    return;
+  beginResetModel();
+  m_root = std::make_unique<Node>(); // Clear old data
 
-  const auto rootEntries = m_engine->readRootDirectory();
-  for (const auto &e : rootEntries) {
-    auto node = std::make_unique<Node>();
-    node->entry = e;
-    node->parent = m_root.get();
-    if (e.isDirectory()) {
-      buildChildren(node.get());
+  if (m_engine && m_engine->isLoaded()) {
+    // Retrieve entries using the Hatari-style probing logic
+    std::vector<Atari::DirEntry> rootEntries = m_engine->readRootDirectory();
+
+    for (const auto &entry : rootEntries) {
+      auto child = std::make_unique<Node>(entry, m_root.get());
+      if (entry.isDirectory()) {
+        buildChildren(child.get());
+      }
+      m_root->children.push_back(std::move(child));
     }
-    m_root->children.push_back(std::move(node));
   }
+  endResetModel();
 }
 
 void AtariFileSystemModel::buildChildren(Node *parentNode) {
-  if (!m_engine || !parentNode->entry.isDirectory())
+  if (!m_engine)
     return;
 
-  const auto entries =
-      m_engine->readSubDirectory(parentNode->entry.getStartCluster());
-  for (const auto &e : entries) {
-    // Skip . and .. entries to avoid infinite recursion
-    std::string name = e.getFilename();
-    if (name == "." || name == "..")
-      continue;
+  // Safety: If the start cluster is 0 or 1, and it's not the root,
+  // it's likely a fake directory entry.
+  if (parentNode->entry.getStartCluster() < 2) {
+    qDebug() << "[MODEL] Skipping sub-directory scan for suspicious cluster:"
+             << parentNode->entry.getStartCluster();
+    return;
+  }
 
-    auto node = std::make_unique<Node>();
-    node->entry = e;
-    node->parent = parentNode;
-    if (e.isDirectory()) {
-      buildChildren(node.get());
+  std::vector<Atari::DirEntry> subEntries =
+      m_engine->readSubDirectory(parentNode->entry.getStartCluster());
+
+  for (const auto &entry : subEntries) {
+    // Only add if the name actually looks printable
+    QString name = Atari::AtariDiskEngine::toQString(entry.getFilename());
+    if (name.contains(QRegExp("[^a-zA-Z0-9\\.\\s]"))) {
+      qDebug() << "[MODEL] Blocking scrambled child entry:" << name;
+      continue;
     }
-    parentNode->children.push_back(std::move(node));
+
+    auto child = std::make_unique<Node>(entry, parentNode);
+    if (entry.isDirectory() && entry.name[0] != '.') {
+      buildChildren(child.get());
+    }
+    parentNode->children.push_back(std::move(child));
   }
 }
 
 AtariFileSystemModel::Node *
 AtariFileSystemModel::nodeFromIndex(const QModelIndex &index) const {
-  if (!index.isValid())
-    return m_root.get();
-  return static_cast<Node *>(index.internalPointer());
+  if (index.isValid()) {
+    return static_cast<Node *>(index.internalPointer());
+  }
+  return m_root.get();
 }
+
+Atari::DirEntry AtariFileSystemModel::getEntry(const QModelIndex &index) const {
+  if (!index.isValid()) {
+    qDebug() << "[MODEL] Warning: getEntry called with invalid index.";
+    return Atari::DirEntry();
+  }
+
+  Node *node = static_cast<Node *>(index.internalPointer());
+  if (!node) {
+    qDebug() << "[MODEL] CRITICAL: Node pointer is NULL for index" << index;
+    return Atari::DirEntry();
+  }
+
+  qDebug() << "[MODEL] Selection -> File:"
+           << Atari::AtariDiskEngine::toQString(node->entry.getFilename())
+           << "| Start Cluster:" << node->entry.getStartCluster()
+           << "| Size:" << node->entry.getFileSize();
+
+  return node->entry;
+}
+// =============================================================================
+//  QAbstractItemModel Overrides
+// =============================================================================
 
 QModelIndex AtariFileSystemModel::index(int row, int column,
                                         const QModelIndex &parent) const {
@@ -73,31 +99,30 @@ QModelIndex AtariFileSystemModel::index(int row, int column,
     return QModelIndex();
 
   Node *parentNode = nodeFromIndex(parent);
-  if (row >= 0 && static_cast<size_t>(row) < parentNode->children.size()) {
+  if (row < static_cast<int>(parentNode->children.size())) {
     return createIndex(row, column, parentNode->children[row].get());
   }
   return QModelIndex();
 }
 
-QModelIndex AtariFileSystemModel::parent(const QModelIndex &child) const {
-  if (!child.isValid())
+QModelIndex AtariFileSystemModel::parent(const QModelIndex &index) const {
+  if (!index.isValid())
     return QModelIndex();
 
-  Node *childNode = static_cast<Node *>(child.internalPointer());
+  Node *childNode = static_cast<Node *>(index.internalPointer());
   Node *parentNode = childNode->parent;
 
   if (parentNode == m_root.get() || !parentNode)
     return QModelIndex();
 
+  // Find the row of the parent within the grandparent
   Node *grandParent = parentNode->parent;
-  int row = 0;
-  for (size_t i = 0; i < grandParent->children.size(); ++i) {
+  for (int i = 0; i < static_cast<int>(grandParent->children.size()); ++i) {
     if (grandParent->children[i].get() == parentNode) {
-      row = static_cast<int>(i);
-      break;
+      return createIndex(i, 0, parentNode);
     }
   }
-  return createIndex(row, 0, parentNode);
+  return QModelIndex();
 }
 
 int AtariFileSystemModel::rowCount(const QModelIndex &parent) const {
@@ -107,7 +132,9 @@ int AtariFileSystemModel::rowCount(const QModelIndex &parent) const {
   return static_cast<int>(parentNode->children.size());
 }
 
-int AtariFileSystemModel::columnCount(const QModelIndex &) const { return 1; }
+int AtariFileSystemModel::columnCount(const QModelIndex &) const {
+  return 1; // Filename column
+}
 
 QVariant AtariFileSystemModel::data(const QModelIndex &index, int role) const {
   if (!index.isValid())
@@ -124,11 +151,4 @@ Qt::ItemFlags AtariFileSystemModel::flags(const QModelIndex &index) const {
   if (!index.isValid())
     return Qt::NoItemFlags;
   return QAbstractItemModel::flags(index);
-}
-
-const Atari::DirEntry *
-AtariFileSystemModel::entryFromIndex(const QModelIndex &index) const {
-  if (!index.isValid())
-    return nullptr;
-  return &static_cast<Node *>(index.internalPointer())->entry;
 }

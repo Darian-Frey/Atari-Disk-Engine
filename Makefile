@@ -420,7 +420,8 @@ obj/AtariFileSystemModel.o: src/AtariFileSystemModel.cpp include/AtariFileSystem
 
 obj/MainWindow.o: ui/MainWindow.cpp ui/MainWindow.h \
 		include/AtariDiskEngine.h \
-		include/AtariFileSystemModel.h
+		include/AtariFileSystemModel.h \
+		ui/HexViewWidget.h
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o obj/MainWindow.o ui/MainWindow.cpp
 
 obj/HexViewWidget.o: ui/HexViewWidget.cpp ui/HexViewWidget.h
