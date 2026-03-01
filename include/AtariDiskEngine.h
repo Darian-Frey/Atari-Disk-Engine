@@ -9,9 +9,9 @@
 
 namespace Atari {
 
-constexpr uint16_t SECTOR_SIZE = 512;
-constexpr uint16_t DIRENT_SIZE = 32;
-constexpr uint16_t BOOT_CHECKSUM_TARGET = 0x1234;
+inline constexpr uint16_t SECTOR_SIZE = 512;
+inline constexpr uint16_t DIRENT_SIZE = 32;
+inline constexpr uint16_t BOOT_CHECKSUM_TARGET = 0x1234;
 
 inline uint16_t readLE16(const uint8_t *p) { return p[0] | (p[1] << 8); }
 inline uint16_t readBE16(const uint8_t *p) { return (p[0] << 8) | p[1]; }
@@ -41,6 +41,8 @@ public:
 
   QByteArray readFileQt(const DirEntry &entry) const;
 
+  const std::vector<uint8_t> &getRawImageData() const { return m_image; }
+
   AtariDiskEngine() = default;
   AtariDiskEngine(std::vector<uint8_t> imageData);
   AtariDiskEngine(const uint8_t *data, std::size_t byteCount);
@@ -61,6 +63,8 @@ public:
 
   bool validateBootChecksum() const noexcept;
   static bool validateBootChecksum(const uint8_t *sector512) noexcept;
+
+  void createNew720KImage();
 
 private:
   bool isValidDirectoryEntry(const uint8_t *data) const;

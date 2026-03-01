@@ -23,9 +23,11 @@ public:
 private slots:
   void onOpenFile();
   void onFileLoaded();
+  void onSaveDisk();
   void onCloseFile();
   void onFileSelected(const QModelIndex &index);
   void onExtractFile();
+  void onNewDisk();
 
 private:
   void setupUi();

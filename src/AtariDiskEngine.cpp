@@ -391,11 +391,6 @@ QByteArray Atari::AtariDiskEngine::getSector(uint32_t sectorIndex) const {
                     SECTOR_SIZE);
 }
 
-QByteArray AtariDiskEngine::readFileQt(const DirEntry &entry) const {
-  std::vector<uint8_t> data = readFile(entry);
-  return QByteArray(reinterpret_cast<const char *>(data.data()), data.size());
-}
-
 QString AtariDiskEngine::toQString(const std::string &s) {
   return QString::fromStdString(s);
 }
@@ -441,6 +436,46 @@ QByteArray Atari::AtariDiskEngine::readFileQt(const DirEntry &entry) const {
 
   return QByteArray(reinterpret_cast<const char *>(buffer.data()),
                     buffer.size());
+}
+
+void Atari::AtariDiskEngine::createNew720KImage() {
+  const uint32_t DISK_720K_SIZE = 737280;
+  m_image.assign(DISK_720K_SIZE, 0); // Fill with zeros
+
+  // Setup BPB for 720KB (9 sectors, 2 sides, 80 tracks)
+  uint8_t *b = m_image.data();
+
+  b[0x00] = 0xEB;
+  b[0x01] = 0x34;
+  b[0x02] = 0x90;                    // Jump
+  std::memcpy(b + 3, "GEMINI  ", 8); // OEM Name
+
+  b[0x0B] = 0x00;
+  b[0x0C] = 0x02; // 512 Bytes per sector
+  b[0x0D] = 0x02; // 2 Sectors per cluster
+  b[0x0E] = 0x01;
+  b[0x0F] = 0x00; // 1 Reserved sector (Boot)
+  b[0x10] = 0x02; // 2 FATs
+  b[0x11] = 0x70;
+  b[0x12] = 0x00; // 112 Max Root Entries
+  b[0x13] = 0xA0;
+  b[0x14] = 0x05; // 1440 Total sectors (0x05A0)
+  b[0x15] = 0xF9; // Media descriptor (3.5" DD)
+  b[0x16] = 0x05;
+  b[0x17] = 0x00; // 5 Sectors per FAT
+
+  // Checksum the bootsector (Atari TOS requirement for 'executable' boot)
+  uint16_t sum = 0;
+  for (int i = 0; i < 510; i += 2) {
+    sum += (b[i] << 8) | b[i + 1];
+  }
+  uint16_t checksum = 0x1234 - sum;
+  b[510] = (checksum >> 8) & 0xFF;
+  b[511] = checksum & 0xFF;
+
+  m_geoMode = GeometryMode::BPB;
+  m_internalOffset = 0;
+  qDebug() << "[ENGINE] New 720KB Disk Created in RAM.";
 }
 
 } // namespace Atari

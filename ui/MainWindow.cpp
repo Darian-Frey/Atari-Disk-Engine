@@ -46,6 +46,14 @@ void MainWindow::setupUi() {
   // Close Action
   QAction *closeAction = new QAction("&Close Image", this);
   connect(closeAction, &QAction::triggered, this, &MainWindow::onCloseFile);
+
+  // Save Action
+  QAction *saveAction = new QAction("&Save Disk As...", this);
+  saveAction->setShortcut(QKeySequence::Save);
+  connect(saveAction, &QAction::triggered, this, &MainWindow::onSaveDisk);
+  fileMenu->addAction(saveAction);
+  fileMenu->insertAction(closeAction, saveAction);
+
   fileMenu->addAction(closeAction);
 
   // Extract Action
@@ -53,6 +61,12 @@ void MainWindow::setupUi() {
   extractAction->setShortcut(QKeySequence(Qt::CTRL + Qt::Key_E));
   connect(extractAction, &QAction::triggered, this, &MainWindow::onExtractFile);
   fileMenu->addAction(extractAction);
+
+  // New Disk Action
+  QAction *newAction = new QAction("&New 720K Disk", this);
+  newAction->setShortcut(QKeySequence::New);
+  connect(newAction, &QAction::triggered, this, &MainWindow::onNewDisk);
+  fileMenu->insertAction(openAction, newAction);
 
   fileMenu->addSeparator();
 
@@ -187,5 +201,52 @@ void MainWindow::onExtractFile() {
     statusBar()->showMessage("Extracted to " + savePath, 3000);
   } else {
     QMessageBox::critical(this, "Error", "Could not write to local file.");
+  }
+}
+
+void MainWindow::onNewDisk() {
+  if (m_engine->isLoaded()) {
+    auto res = QMessageBox::question(
+        this, "New Disk", "Clear current disk and create a new 720KB image?");
+    if (res != QMessageBox::Yes)
+      return;
+  }
+
+  m_engine->createNew720KImage();
+  m_model->refresh();
+  m_hexView->setData(m_engine->getSector(0)); // Show the new bootsector
+  m_formatLabel->setText("New 720KB Disk (Unsaved)");
+  setWindowTitle("Atari ST Toolkit - [New Disk]");
+}
+
+void MainWindow::onSaveDisk() {
+  if (!m_engine || !m_engine->isLoaded()) {
+    QMessageBox::warning(this, "Save Disk", "No disk image in memory to save.");
+    return;
+  }
+
+  QString savePath = QFileDialog::getSaveFileName(this, "Save Atari Disk Image",
+                                                  QDir::homePath(),
+                                                  "Atari Disk Images (*.st)");
+
+  if (savePath.isEmpty())
+    return;
+
+  // Ensure it has the .st extension
+  if (!savePath.endsWith(".st", Qt::CaseInsensitive)) {
+    savePath += ".st";
+  }
+
+  QFile outFile(savePath);
+  if (outFile.open(QIODevice::WriteOnly)) {
+    // Access the raw data from the engine
+    const std::vector<uint8_t> &data = m_engine->getRawImageData();
+    outFile.write(reinterpret_cast<const char *>(data.data()), data.size());
+    outFile.close();
+
+    statusBar()->showMessage("Disk saved successfully: " + savePath, 3000);
+    setWindowTitle("Atari ST Toolkit - " + QFileInfo(savePath).fileName());
+  } else {
+    QMessageBox::critical(this, "Error", "Could not write disk image to file.");
   }
 }
