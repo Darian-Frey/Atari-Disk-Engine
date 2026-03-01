@@ -61,6 +61,22 @@ inline void writeBE16(uint8_t *p, uint16_t val) {
 }
 
 /**
+ * @struct DiskStats
+ * @brief Contains statistics about the disk image.
+ */
+struct DiskStats {
+  QString label;
+  uint64_t totalBytes;
+  uint64_t freeBytes;
+  uint64_t usedBytes;
+  int fileCount;
+  int dirCount;
+  int sectorsPerCluster;
+  int totalClusters;
+  int freeClusters;
+};
+
+/**
  * @struct DirEntry
  * @brief Represents a single directory entry in the FAT12 filesystem.
  */
@@ -100,6 +116,12 @@ struct DirEntry {
  */
 class AtariDiskEngine {
 public:
+  /**
+   * @brief Gets statistics about the disk image.
+   * @return DiskStats struct with disk information.
+   */
+  DiskStats getDiskStats() const;
+
   /**
    * @brief Deletes a file from the disk image.
    * @param entry The directory entry of the file to delete.
@@ -158,7 +180,7 @@ public:
   QByteArray getSector(uint32_t sectorIndex) const;
 
   /** @return The geometry mode used for the current image. */
-  GeometryMode lastGeometryMode() const { return m_geoMode; }
+  GeometryMode getGeometryMode() const { return m_geoMode; }
 
   /** @return A human-readable string describing the disk format. */
   QString getFormatInfoString() const;

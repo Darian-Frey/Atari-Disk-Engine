@@ -46,6 +46,12 @@ void MainWindow::setupUi() {
   // 2. CREATE THE DROP-DOWN FILE MENU
   QMenu *fileMenu = menuBar()->addMenu("&File");
 
+  // 3. CREATE THE DISK MENU
+  QMenu *diskMenu = menuBar()->addMenu("&Disk");
+  QAction *infoAction = diskMenu->addAction("Disk &Information");
+  infoAction->setShortcut(QKeySequence("Ctrl+I"));
+  connect(infoAction, &QAction::triggered, this, &MainWindow::onDiskInfo);
+
   // Open Action: Loads an image from disk
   QAction *openAction =
       new QAction(QIcon::fromTheme("document-open"), "&Open Disk...", this);
@@ -334,4 +340,37 @@ void MainWindow::onDeleteFile() {
       QMessageBox::critical(this, "Error", "Could not delete file.");
     }
   }
+}
+
+/**
+ * @brief Shows disk information in a dialog.
+ */
+void MainWindow::onDiskInfo() {
+  if (!m_engine->isLoaded())
+    return;
+
+  Atari::DiskStats stats = m_engine->getDiskStats();
+
+  QString info = QString("<b>Disk Geometry:</b> %1<br>"
+                         "<b>Total Size:</b> %2 KB<br>"
+                         "<b>Space Used:</b> %3 KB<br>"
+                         "<b>Space Free:</b> %4 KB<br><br>"
+                         "<b>Files:</b> %5<br>"
+                         "<b>Directories:</b> %6<br><br>"
+                         "<b>Clusters:</b> %7 total (%8 free)<br>"
+                         "<b>Sectors Per Cluster:</b> %9")
+                     .arg((m_engine->getGeometryMode() ==
+                           Atari::AtariDiskEngine::GeometryMode::BPB)
+                              ? "Standard (BPB)"
+                              : "Hatari/Vectronix")
+                     .arg(stats.totalBytes / 1024)
+                     .arg(stats.usedBytes / 1024)
+                     .arg(stats.freeBytes / 1024)
+                     .arg(stats.fileCount)
+                     .arg(stats.dirCount)
+                     .arg(stats.totalClusters)
+                     .arg(stats.freeClusters)
+                     .arg(stats.sectorsPerCluster);
+
+  QMessageBox::information(this, "Atari ST Disk Information", info);
 }

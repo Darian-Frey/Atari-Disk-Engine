@@ -71,6 +71,9 @@ private slots:
   /** @brief Deletes the currently selected file from the disk image. */
   void onDeleteFile();
 
+  /** @brief Shows disk information in a dialog. */
+  void onDiskInfo();
+
 private:
   /** @brief Initializes UI components, layouts, and signal/slot connections. */
   void setupUi();

@@ -657,4 +657,51 @@ bool Atari::AtariDiskEngine::deleteFile(const DirEntry &entry) {
   return true;
 }
 
+Atari::DiskStats Atari::AtariDiskEngine::getDiskStats() const {
+  DiskStats stats;
+  if (!isLoaded())
+    return stats;
+
+  stats.totalBytes = m_image.size();
+  stats.sectorsPerCluster = (m_geoMode == GeometryMode::HatariGuess) ? 1 : 2;
+
+  // 1. Count Files and Directories in Root
+  stats.fileCount = 0;
+  stats.dirCount = 0;
+  auto entries = readRootDirectory();
+  for (const auto &e : entries) {
+    if (e.attr & 0x10)
+      stats.dirCount++;
+    else
+      stats.fileCount++;
+  }
+
+  // 2. Scan FAT for Free Space
+  // Total clusters for 720K is usually 711
+  stats.totalClusters = (m_image.size() - (18 * SECTOR_SIZE)) /
+                        (stats.sectorsPerCluster * SECTOR_SIZE);
+  stats.freeClusters = 0;
+
+  uint32_t fatOffset = 1 * SECTOR_SIZE;
+  for (int i = 2; i < stats.totalClusters + 2; ++i) {
+    uint32_t idx = (i * 3) / 2;
+    uint16_t val;
+    if (i % 2 == 0) {
+      val = m_image[fatOffset + idx] |
+            ((m_image[fatOffset + idx + 1] & 0x0F) << 8);
+    } else {
+      val =
+          (m_image[fatOffset + idx] >> 4) | (m_image[fatOffset + idx + 1] << 4);
+    }
+    if (val == 0x000)
+      stats.freeClusters++;
+  }
+
+  stats.freeBytes =
+      stats.freeClusters * (stats.sectorsPerCluster * SECTOR_SIZE);
+  stats.usedBytes = stats.totalBytes - stats.freeBytes;
+
+  return stats;
+}
+
 } // namespace Atari
