@@ -65,6 +65,12 @@ private slots:
   /** @brief Injects a file from the host system into the current disk image. */
   void onInjectFile();
 
+  /** @brief Handles custom context menu requests for the tree view. */
+  void onCustomContextMenu(const QPoint &pos);
+
+  /** @brief Deletes the currently selected file from the disk image. */
+  void onDeleteFile();
+
 private:
   /** @brief Initializes UI components, layouts, and signal/slot connections. */
   void setupUi();

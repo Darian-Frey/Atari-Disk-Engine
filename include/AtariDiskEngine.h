@@ -100,6 +100,13 @@ struct DirEntry {
  */
 class AtariDiskEngine {
 public:
+  /**
+   * @brief Deletes a file from the disk image.
+   * @param entry The directory entry of the file to delete.
+   * @return True if successful.
+   */
+  bool deleteFile(const DirEntry &entry);
+
   /** @brief Modes for interpreting disk geometry. */
   enum class GeometryMode { Unknown, BPB, HatariGuess };
 

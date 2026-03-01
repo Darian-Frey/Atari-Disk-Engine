@@ -590,4 +590,71 @@ bool Atari::AtariDiskEngine::injectFile(const QString &localPath) {
   return true;
 }
 
+bool Atari::AtariDiskEngine::deleteFile(const DirEntry &entry) {
+  if (!isLoaded())
+    return false;
+
+  // Check if it's a directory
+  if (entry.isDirectory()) {
+    qDebug() << "[ENGINE] Cannot delete directory with this function.";
+    return false;
+  }
+
+  uint16_t startCluster = entry.getStartCluster();
+  uint32_t rootOffset = 11 * SECTOR_SIZE; // Default for our 720K
+
+  // 1. Locate and Mark Directory Entry as Deleted (0xE5)
+  bool entryFound = false;
+  for (int i = 0; i < 112; ++i) {
+    uint32_t offset = rootOffset + (i * 32);
+    // Compare the 11-byte name/ext to find the exact match
+    if (std::memcmp(&m_image[offset], entry.name, 8) == 0 &&
+        std::memcmp(&m_image[offset + 8], entry.ext, 3) == 0) {
+      m_image[offset] = 0xE5; // Standard FAT "Deleted" marker
+      entryFound = true;
+      break;
+    }
+  }
+
+  if (!entryFound)
+    return false;
+
+  // 2. Clear the FAT Chain
+  uint32_t fatOffset = 1 * SECTOR_SIZE;
+  uint16_t current = startCluster;
+
+  while (current >= 2 && current < 0xFF0) {
+    // Look up the next cluster before we wipe the current one
+    uint32_t idx = (current * 3) / 2;
+    uint16_t next;
+    if (current % 2 == 0) {
+      next = m_image[fatOffset + idx] |
+             ((m_image[fatOffset + idx + 1] & 0x0F) << 8);
+    } else {
+      next =
+          (m_image[fatOffset + idx] >> 4) | (m_image[fatOffset + idx + 1] << 4);
+    }
+
+    // Wipe current entry in FAT1 (set to 0x000)
+    if (current % 2 == 0) {
+      m_image[fatOffset + idx] = 0x00;
+      m_image[fatOffset + idx + 1] &= 0xF0;
+    } else {
+      m_image[fatOffset + idx] &= 0x0F;
+      m_image[fatOffset + idx + 1] = 0x00;
+    }
+
+    if (next >= 0xFF8 || next == 0x000)
+      break;
+    current = next;
+  }
+
+  // 3. Sync FAT2
+  std::memcpy(&m_image[6 * SECTOR_SIZE], &m_image[1 * SECTOR_SIZE],
+              5 * SECTOR_SIZE);
+
+  qDebug() << "[ENGINE] Deleted file starting at cluster" << startCluster;
+  return true;
+}
+
 } // namespace Atari

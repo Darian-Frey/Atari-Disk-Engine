@@ -38,6 +38,11 @@ void MainWindow::setupUi() {
   splitter->setStretchFactor(1, 1); // Allow hex view to expand more than tree
   setCentralWidget(splitter);
 
+  // Enable context menu for the tree view
+  m_treeView->setContextMenuPolicy(Qt::CustomContextMenu);
+  connect(m_treeView, &QTreeView::customContextMenuRequested, this,
+          &MainWindow::onCustomContextMenu);
+
   // 2. CREATE THE DROP-DOWN FILE MENU
   QMenu *fileMenu = menuBar()->addMenu("&File");
 
@@ -284,5 +289,49 @@ void MainWindow::onInjectFile() {
   } else {
     QMessageBox::critical(this, "Error",
                           "Failed to inject file. Disk might be full.");
+  }
+}
+
+/**
+ * @brief Handles custom context menu requests for the tree view.
+ */
+void MainWindow::onCustomContextMenu(const QPoint &pos) {
+  QModelIndex index = m_treeView->indexAt(pos);
+  if (!index.isValid())
+    return;
+
+  QMenu contextMenu(this);
+  QAction *deleteAct = contextMenu.addAction("Delete File");
+
+  // Store the index so the delete slot knows what to kill
+  connect(deleteAct, &QAction::triggered, this, &MainWindow::onDeleteFile);
+
+  contextMenu.exec(m_treeView->mapToGlobal(pos));
+}
+
+/**
+ * @brief Deletes the currently selected file from the disk image.
+ */
+void MainWindow::onDeleteFile() {
+  QModelIndex index = m_treeView->currentIndex();
+  if (!index.isValid())
+    return;
+
+  Atari::DirEntry entry = m_model->getEntry(index);
+  QString fileName = Atari::AtariDiskEngine::toQString(entry.getFilename());
+
+  auto reply =
+      QMessageBox::question(this, "Confirm Delete",
+                            "Are you sure you want to delete " + fileName + "?",
+                            QMessageBox::Yes | QMessageBox::No);
+
+  if (reply == QMessageBox::Yes) {
+    if (m_engine->deleteFile(entry)) {
+      m_model->refresh();               // Refresh the tree
+      m_hexView->setData(QByteArray()); // Clear hex view
+      statusBar()->showMessage("File deleted successfully", 3000);
+    } else {
+      QMessageBox::critical(this, "Error", "Could not delete file.");
+    }
   }
 }
