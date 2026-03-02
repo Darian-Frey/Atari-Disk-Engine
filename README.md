@@ -2,14 +2,11 @@
 
 **"Power Without The Price" — Modern Disk Manipulation for Retro Hardware.**
 
-[![Platform](https://img.shields.io/badge/Platform-Linux-blue.svg)](https://ubuntu.com/)
-[![Qt](https://img.shields.io/badge/Framework-Qt5.15-green.svg)](https://www.qt.io/)
-
 ---
 
 ## 💾 Overview
 
-The **Atari ST Toolkit** is a specialized RAM-disk utility designed to bridge the gap between your modern Linux environment and the classic 16-bit Atari ST ecosystem. Built with a focus on speed and accuracy, it allows you to manipulate `.ST` floppy images with surgical precision.
+The **Atari ST Toolkit** is a specialized RAM-disk utility designed to bridge the gap between your modern Linux environment and the classic 16-bit Atari ST ecosystem. Built with a focus on speed and accuracy, it allows you to manipulate .ST floppy images with surgical precision.
 
 Whether you are rebuilding a game disk, extracting old code, or managing GEM-based software, this toolkit provides the low-level access required to handle **FAT12** filesystems and **TOS-specific** boot sectors.
 
@@ -41,11 +38,44 @@ This project is currently optimized and tested for the following environment:
 
 ### 1. Build from Source
 
-```bash
-# Clean and build the toolkit
+To perform a clean build on your system, run the following in the project root:
+
 make clean
+
 make -j$(nproc)
 
-# Launch the engine
+### 2. Launch the Engine
+
 ./bin/AtariDiskEngine
-```
+
+### 3. Standard Workflow
+
+1. **Create**: File > New 720K Disk (Initializes a fresh GEMINI-labeled image).
+2. **Inject**: File > Inject File (Bridges a Linux file into the Atari environment).
+3. **Inspect**: Click any file in the Tree View to view its raw bytes in the Hex Viewer.
+4. **Analyze**: Disk > Disk Information to verify FAT health.
+5. **Save**: File > Save As to export your .st image for use in emulators (Hatari) or real hardware.
+
+---
+
+## 📝 Atari Technical Specs (Standard 720KB)
+
+| Attribute | Value |
+| :--- | :--- |
+| **Sectors per Track** | 9 |
+| **Heads** | 2 |
+| **Sectors per Cluster** | 2 (1024 bytes) |
+| **Directory Start** | Sector 11 |
+| **Data Start** | Sector 18 |
+| **FS Type** | FAT12 (Atari TOS Variant) |
+
+---
+
+## 🎨 Aesthetic Credits
+
+* **Boot Sector Signature**: "ANTIGRAV"
+* **UI Inspiration**: Classic GEM Desktop / Neodesk
+* **Philosophy**: Keep it fast, keep it accurate.
+
+---
+*Developed for the Atari Community in 2026. Long live the 68000.*
