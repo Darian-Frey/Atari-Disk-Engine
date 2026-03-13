@@ -86,6 +86,9 @@ private slots:
   /** @brief Formats the disk image. */
   void onFormatDisk();
 
+  /** @brief Edits the OEM label of the disk image. */
+  void onEditOemLabel();
+
 private:
   /** @brief Initializes UI components, layouts, and signal/slot connections. */
   void setupUi();

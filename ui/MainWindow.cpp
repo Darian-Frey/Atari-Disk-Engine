@@ -112,6 +112,10 @@ void MainWindow::setupUi() {
   formatAct->setShortcut(QKeySequence("Ctrl+Shift+F"));
   connect(formatAct, &QAction::triggered, this, &MainWindow::onFormatDisk);
 
+  // OEM Label Action
+  QAction *oemAct = diskMenu->addAction("Edit &OEM Label...");
+  connect(oemAct, &QAction::triggered, this, &MainWindow::onEditOemLabel);
+
   // Add "Make Bootable" to Disk Menu
   QAction *fixBootAct = diskMenu->addAction("Make Disk Bootable");
   connect(fixBootAct, &QAction::triggered, this, &MainWindow::onFixBoot);
@@ -488,6 +492,30 @@ void MainWindow::onFormatDisk() {
       onDiskInfo();
     } else {
       QMessageBox::critical(this, "Error", "Format failed.");
+    }
+  }
+}
+
+void MainWindow::onEditOemLabel() {
+  if (!m_engine->isLoaded())
+    return;
+
+  // Get current label via the checkBootSector info we already wrote
+  Atari::BootSectorInfo info = m_engine->checkBootSector();
+
+  bool ok;
+  QString newLabel = QInputDialog::getText(
+      this, "Edit OEM Signature",
+      "Enter 6-character Signature:", QLineEdit::Normal, info.oemName, &ok);
+
+  if (ok && !newLabel.isEmpty()) {
+    if (m_engine->setOemLabel(newLabel)) {
+      statusBar()->showMessage("OEM Label updated and Checksum recalculated.",
+                               3000);
+      // Refresh the Disk Info if it's open, or just show success
+      onDiskInfo();
+    } else {
+      QMessageBox::critical(this, "Error", "Could not update Boot Sector.");
     }
   }
 }

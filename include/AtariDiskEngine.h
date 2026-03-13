@@ -221,6 +221,9 @@ public:
   /** @brief Formats the disk image with a standard 720KB empty format. */
   bool formatDisk();
 
+  /** @brief Sets the OEM label of the disk image. */
+  bool setOemLabel(const QString &newLabel);
+
 private:
   /** @brief Checks if a block of data appears to be a valid directory entry. */
   bool isValidDirectoryEntry(const uint8_t *data) const;

@@ -938,4 +938,32 @@ bool Atari::AtariDiskEngine::formatDisk() {
   return true;
 }
 
+/**
+ * @brief Sets the OEM label of the disk image.
+ **/
+bool Atari::AtariDiskEngine::setOemLabel(const QString &newLabel) {
+  if (!isLoaded())
+    return false;
+
+  // 1. Prepare 6-byte buffer (Atari standard is often 6 bytes for OEM)
+  char labelBuffer[7];
+  std::memset(labelBuffer, ' ', 6);
+  labelBuffer[6] = '\0';
+
+  std::string stdLabel = newLabel.toUpper().toStdString();
+  size_t len = std::min((size_t)6, stdLabel.length());
+  std::memcpy(labelBuffer, stdLabel.c_str(), len);
+
+  // 2. Write to Boot Sector at offset 0x02
+  std::memcpy(&m_image[2], labelBuffer, 6);
+
+  qDebug() << "[ENGINE] OEM Label updated to:" << labelBuffer;
+
+  // 3. IMPORTANT: Changing the label changes the Boot Checksum!
+  // We should re-fix it so the disk remains bootable.
+  fixBootChecksum();
+
+  return true;
+}
+
 } // namespace Atari
