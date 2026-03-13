@@ -8,7 +8,9 @@
 #include <QFileInfo>
 #include <QHeaderView>
 #include <QIcon>
+#include <QInputDialog>
 #include <QKeySequence>
+#include <QLineEdit>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -311,10 +313,12 @@ void MainWindow::onCustomContextMenu(const QPoint &pos) {
     return;
 
   QMenu contextMenu(this);
-  QAction *deleteAct = contextMenu.addAction("Delete File");
 
-  // Store the index so the delete slot knows what to kill
-  connect(deleteAct, &QAction::triggered, this, &MainWindow::onDeleteFile);
+  // New Rename Option
+  contextMenu.addAction("Rename File", this, &MainWindow::onRenameFile);
+
+  // Existing Delete Option (Refactored to match)
+  contextMenu.addAction("Delete File", this, &MainWindow::onDeleteFile);
 
   contextMenu.exec(m_treeView->mapToGlobal(pos));
 }
@@ -408,5 +412,29 @@ void MainWindow::onFixBoot() {
     onDiskInfo();
   } else {
     QMessageBox::critical(this, "Error", "Failed to modify boot sector.");
+  }
+}
+
+void MainWindow::onRenameFile() {
+  QModelIndex index = m_treeView->currentIndex();
+  if (!index.isValid())
+    return;
+
+  Atari::DirEntry entry = m_model->getEntry(index);
+  QString oldName = Atari::AtariDiskEngine::toQString(entry.getFilename());
+
+  bool ok;
+  QString newName = QInputDialog::getText(
+      this, "Rename File", "New Name (8.3 format):", QLineEdit::Normal, oldName,
+      &ok);
+
+  if (ok && !newName.isEmpty()) {
+    if (m_engine->renameFile(entry, newName)) {
+      m_model->refresh();
+      statusBar()->showMessage("File renamed", 3000);
+    } else {
+      QMessageBox::critical(
+          this, "Error", "Could not rename file. Is the disk write-protected?");
+    }
   }
 }

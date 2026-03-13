@@ -212,6 +212,9 @@ public:
   /** @brief Initializes the image with a standard 720KB empty format. */
   void createNew720KImage();
 
+  /** @brief Renames a file in the disk image. */
+  bool renameFile(const DirEntry &entry, const QString &newName);
+
 private:
   /** @brief Checks if a block of data appears to be a valid directory entry. */
   bool isValidDirectoryEntry(const uint8_t *data) const;

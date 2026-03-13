@@ -77,6 +77,9 @@ private slots:
   /** @brief Fixes the boot sector checksum. */
   void onFixBoot();
 
+  /** @brief Renames the currently selected file. */
+  void onRenameFile();
+
 private:
   /** @brief Initializes UI components, layouts, and signal/slot connections. */
   void setupUi();

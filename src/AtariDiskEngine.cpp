@@ -766,4 +766,39 @@ bool Atari::AtariDiskEngine::fixBootChecksum() {
   return true;
 }
 
+bool Atari::AtariDiskEngine::renameFile(const DirEntry &entry,
+                                        const QString &newName) {
+  if (!isLoaded() || newName.isEmpty())
+    return false;
+
+  // 1. Sanitize to 8.3 Format
+  QString base = newName.section('.', 0, 0).left(8).toUpper();
+  QString ext = newName.section('.', 1, 1).left(3).toUpper();
+
+  char formattedName[11];
+  std::memset(formattedName, ' ', 11);
+  std::memcpy(formattedName, base.toStdString().c_str(), base.length());
+  std::memcpy(formattedName + 8, ext.toStdString().c_str(), ext.length());
+
+  // 2. Locate the Entry in the Root Directory
+  uint32_t rootOffset = 11 * SECTOR_SIZE;
+  bool found = false;
+
+  for (int i = 0; i < 112; ++i) {
+    uint32_t offset = rootOffset + (i * 32);
+    // Compare current name to find the right slot
+    if (std::memcmp(&m_image[offset], entry.name, 8) == 0 &&
+        std::memcmp(&m_image[offset + 8], entry.ext, 3) == 0) {
+      std::memcpy(&m_image[offset], formattedName, 11);
+      found = true;
+      break;
+    }
+  }
+
+  if (found) {
+    qDebug() << "[ENGINE] Renamed file to:" << base << "." << ext;
+  }
+  return found;
+}
+
 } // namespace Atari
