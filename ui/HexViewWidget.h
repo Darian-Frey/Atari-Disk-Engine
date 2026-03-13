@@ -11,15 +11,14 @@ class HexViewWidget : public QWidget {
 public:
   explicit HexViewWidget(QWidget *parent = nullptr);
 
-  /**
-   * @brief setBuffer Updates the display with new binary data.
-   * @param data Raw pointer to the data buffer.
-   * @param size Size of the data in bytes.
-   * @param sectorIndex Optional index to display in the header.
-   */
+
+#include <vector>
+
   void setBuffer(const uint8_t *data, int size, int sectorIndex = -1);
   void setData(const QByteArray &data);
+  void setDiskData(const std::vector<unsigned char> &data);
   void scrollToOffset(int offset);
+  void scrollToOffset(uint32_t offset);
 
 private:
   QPlainTextEdit *m_textEdit;

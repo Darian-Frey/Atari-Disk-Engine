@@ -162,15 +162,22 @@ void MainWindow::onCloseFile() {
 void MainWindow::onOpenFile() {
   QString fileName = QFileDialog::getOpenFileName(this, "Open Disk", "",
                                                   "Atari Disks (*.st *.msa)");
+
   if (!fileName.isEmpty() && m_engine->loadImage(fileName)) {
-    // Initial analysis of the disk structure
+    // 1. Structural Analysis
     m_engine->readRootDirectory();
     m_model->refresh();
     m_treeView->expandAll();
     m_formatLabel->setText(m_engine->getFormatInfoString());
 
-    // Show Boot Sector (Sector 0) in Hex View by default
-    m_hexView->setData(m_engine->getSector(0));
+    // 2. FIX: Load the FULL buffer so Search can navigate the whole disk
+    // We use your setDiskData method and pass the engine's internal vector
+    m_hexView->setDiskData(m_engine->getFullImageBuffer());
+
+    // 3. Reset view to top
+    m_hexView->scrollToOffset(0);
+
+    qDebug() << "[UI] File loaded and full hex buffer populated.";
   }
 }
 
@@ -687,12 +694,22 @@ void MainWindow::onSearchDisk() {
       new QLabel(QString("Found %1 matches:").arg(results.size())));
   layout->addWidget(list);
 
-  // Bonus: If user double-clicks a result, jump to it in the Hex View
-  connect(list, &QListWidget::itemDoubleClicked, [&](QListWidgetItem *item) {
-    int idx = list->row(item);
-    m_hexView->scrollToOffset(results[idx].offset);
-    dlg.accept();
-  });
+  connect(list, &QListWidget::itemDoubleClicked,
+          [this, results, &dlg, list](QListWidgetItem *item) {
+            int row = list->row(item);
+            if (row >= 0 && row < results.size()) {
+              uint32_t targetOffset = results[row].offset;
+
+              // Use the hex view pointer directly
+              this->m_hexView->scrollToOffset(targetOffset);
+
+              // Force the Hex View to be the active widget
+              this->m_hexView->setFocus();
+
+              // Close the dialog so you can see the results immediately
+              dlg.accept();
+            }
+          });
 
   dlg.exec();
 }

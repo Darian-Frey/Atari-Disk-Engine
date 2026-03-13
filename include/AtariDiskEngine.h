@@ -173,6 +173,7 @@ public:
 
   /** @return Const reference to the raw disk image data. */
   const std::vector<uint8_t> &getRawImageData() const { return m_image; }
+  const std::vector<unsigned char> &getFullImageBuffer() const { return m_image; }
 
   /** @brief Fixes the boot sector checksum to make the disk executable. */
   bool fixBootChecksum();
