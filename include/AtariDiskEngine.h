@@ -218,6 +218,9 @@ public:
   /** @brief Gets the file data for a specific directory entry. */
   QByteArray getFileData(const DirEntry &entry) const;
 
+  /** @brief Formats the disk image with a standard 720KB empty format. */
+  bool formatDisk();
+
 private:
   /** @brief Checks if a block of data appears to be a valid directory entry. */
   bool isValidDirectoryEntry(const uint8_t *data) const;

@@ -24,6 +24,9 @@ namespace Atari {
 //  DirEntry Implementation
 // =============================================================================
 
+/**
+ * @brief Gets the filename from a directory entry.
+ **/
 std::string DirEntry::getFilename() const {
   /**
    * Atari filenames are stored as 8.3 format, space-padded.
@@ -64,6 +67,9 @@ AtariDiskEngine::AtariDiskEngine(const uint8_t *data, std::size_t byteCount)
   init();
 }
 
+/**
+ * @brief Initializes the disk engine.
+ **/
 void AtariDiskEngine::init() {
   if (m_image.size() < SECTOR_SIZE) {
     throw std::runtime_error("AtariDiskEngine: File too small.");
@@ -142,6 +148,9 @@ Atari::AtariDiskEngine::clusterOffset(uint16_t cluster) const noexcept {
 //  Directory Parsing Logic
 // =============================================================================
 
+/**
+ * @brief Reads the root directory from the disk image.
+ **/
 std::vector<Atari::DirEntry> Atari::AtariDiskEngine::readRootDirectory() const {
   std::vector<DirEntry> entries;
   if (!isLoaded())
@@ -247,6 +256,9 @@ std::vector<Atari::DirEntry> Atari::AtariDiskEngine::readRootDirectory() const {
 //  FAT12 Management & File IO
 // =============================================================================
 
+/**
+ * @brief Gets the next cluster in the cluster chain.
+ **/
 uint16_t
 AtariDiskEngine::getNextCluster(uint16_t currentCluster) const noexcept {
   /**
@@ -262,6 +274,9 @@ AtariDiskEngine::getNextCluster(uint16_t currentCluster) const noexcept {
   return (currentCluster & 1) ? (raw >> 4) : (raw & 0x0FFF);
 }
 
+/**
+ * @brief Gets the cluster chain for a specific directory entry.
+ **/
 std::vector<uint16_t>
 Atari::AtariDiskEngine::getClusterChain(uint16_t startCluster) const {
   std::vector<uint16_t> chain;
@@ -300,6 +315,9 @@ Atari::AtariDiskEngine::getClusterChain(uint16_t startCluster) const {
   return chain;
 }
 
+/**
+ * @brief Reads a subdirectory from the disk image.
+ **/
 std::vector<Atari::DirEntry>
 Atari::AtariDiskEngine::readSubDirectory(uint16_t startCluster) const {
   std::vector<DirEntry> entries;
@@ -337,6 +355,9 @@ Atari::AtariDiskEngine::readSubDirectory(uint16_t startCluster) const {
   return entries;
 }
 
+/**
+ * @brief Reads a file from the disk image.
+ **/
 std::vector<uint8_t>
 Atari::AtariDiskEngine::readFile(const DirEntry &entry) const {
   uint32_t fileSize = entry.getFileSize();
@@ -385,6 +406,9 @@ Atari::AtariDiskEngine::readFile(const DirEntry &entry) const {
   return data;
 }
 
+/**
+ * @brief Gets the format information string.
+ **/
 QString AtariDiskEngine::getFormatInfoString() const {
   if (m_useManualOverride)
     return QString("Manual Override: Sector %1").arg(m_manualRootSector);
@@ -402,7 +426,10 @@ QString AtariDiskEngine::getFormatInfoString() const {
 //  Qt Bridge Implementation
 // =============================================================================
 
-bool AtariDiskEngine::loadImage(const QString &path) {
+/**
+ * @brief Loads an image from a file path.
+ **/
+bool Atari::AtariDiskEngine::loadImage(const QString &path) {
   QFile file(path);
   if (!file.open(QIODevice::ReadOnly))
     return false;
@@ -411,6 +438,9 @@ bool AtariDiskEngine::loadImage(const QString &path) {
   return true;
 }
 
+/**
+ * @brief Gets a specific sector from the disk image.
+ **/
 QByteArray Atari::AtariDiskEngine::getSector(uint32_t sectorIndex) const {
   if (m_image.empty())
     return QByteArray();
@@ -423,10 +453,16 @@ QByteArray Atari::AtariDiskEngine::getSector(uint32_t sectorIndex) const {
                     SECTOR_SIZE);
 }
 
+/**
+ * @brief Converts a std::string to a QString.
+ **/
 QString AtariDiskEngine::toQString(const std::string &s) {
   return QString::fromStdString(s);
 }
 
+/**
+ * @brief Checks if a block of data appears to be a valid directory entry.
+ **/
 bool Atari::AtariDiskEngine::isValidDirectoryEntry(const uint8_t *d) const {
   if (!((d[0] >= 'A' && d[0] <= 'Z') || (d[0] >= '0' && d[0] <= '9')))
     return false;
@@ -441,6 +477,9 @@ bool Atari::AtariDiskEngine::isValidDirectoryEntry(const uint8_t *d) const {
   return true;
 }
 
+/**
+ * @brief Loads disk image data into the engine.
+ **/
 void Atari::AtariDiskEngine::load(const std::vector<uint8_t> &data) {
   m_image = data;
   m_internalOffset = 0;
@@ -452,6 +491,9 @@ void Atari::AtariDiskEngine::load(const std::vector<uint8_t> &data) {
   init();
 }
 
+/**
+ * @brief Reads a file content from the disk image as a QByteArray.
+ **/
 QByteArray Atari::AtariDiskEngine::readFileQt(const DirEntry &entry) const {
   std::vector<uint8_t> buffer = readFile(entry);
   if (buffer.empty())
@@ -461,6 +503,9 @@ QByteArray Atari::AtariDiskEngine::readFileQt(const DirEntry &entry) const {
                     buffer.size());
 }
 
+/**
+ * @brief Creates a new 720KB disk image.
+ **/
 void Atari::AtariDiskEngine::createNew720KImage() {
   /**
    * Generates a template 737,280 byte image with standard 720KB
@@ -517,6 +562,9 @@ void Atari::AtariDiskEngine::writeLE32(uint8_t *ptr, uint32_t val) {
   ptr[3] = (val >> 24) & 0xFF;
 }
 
+/**
+ * @brief Injects a local file into the disk image.
+ **/
 bool Atari::AtariDiskEngine::injectFile(const QString &localPath) {
   /**
    * Injection Logic:
@@ -590,6 +638,9 @@ bool Atari::AtariDiskEngine::injectFile(const QString &localPath) {
   return true;
 }
 
+/**
+ * @brief Deletes a file from the disk image.
+ **/
 bool Atari::AtariDiskEngine::deleteFile(const DirEntry &entry) {
   if (!isLoaded())
     return false;
@@ -657,6 +708,9 @@ bool Atari::AtariDiskEngine::deleteFile(const DirEntry &entry) {
   return true;
 }
 
+/**
+ * @brief Gets statistics about the disk image.
+ **/
 Atari::DiskStats Atari::AtariDiskEngine::getDiskStats() const {
   DiskStats stats;
   if (!isLoaded())
@@ -704,6 +758,9 @@ Atari::DiskStats Atari::AtariDiskEngine::getDiskStats() const {
   return stats;
 }
 
+/**
+ * @brief Checks the boot sector of the disk image.
+ **/
 Atari::BootSectorInfo Atari::AtariDiskEngine::checkBootSector() const {
   BootSectorInfo info;
   info.expectedChecksum = 0x1234;
@@ -739,6 +796,9 @@ Atari::BootSectorInfo Atari::AtariDiskEngine::checkBootSector() const {
   return info;
 }
 
+/**
+ * @brief Fixes the boot checksum of the disk image.
+ **/
 bool Atari::AtariDiskEngine::fixBootChecksum() {
   if (m_image.size() < 512)
     return false;
@@ -766,6 +826,9 @@ bool Atari::AtariDiskEngine::fixBootChecksum() {
   return true;
 }
 
+/**
+ * @brief Renames a file in the directory.
+ **/
 bool Atari::AtariDiskEngine::renameFile(const DirEntry &entry,
                                         const QString &newName) {
   if (!isLoaded() || newName.isEmpty())
@@ -801,6 +864,9 @@ bool Atari::AtariDiskEngine::renameFile(const DirEntry &entry,
   return found;
 }
 
+/**
+ * @brief Gets the file data for a specific directory entry.
+ **/
 QByteArray Atari::AtariDiskEngine::getFileData(const DirEntry &entry) const {
   QByteArray data;
   if (!isLoaded() || entry.getFileSize() == 0)
@@ -836,6 +902,40 @@ QByteArray Atari::AtariDiskEngine::getFileData(const DirEntry &entry) const {
   }
 
   return data;
+}
+
+/**
+ * @brief Formats the disk image with a standard 720KB empty format.
+ **/
+bool Atari::AtariDiskEngine::formatDisk() {
+  if (!isLoaded())
+    return false;
+
+  // 1. Wipe FAT 1 & 2 (Sectors 1-10)
+  // Most Atari disks use 0xF9 or 0xF7 as the first byte (Media Descriptor)
+  uint8_t mediaDescriptor = m_image[1 * SECTOR_SIZE];
+  if (mediaDescriptor < 0xF0)
+    mediaDescriptor = 0xF9; // Default to DS/DD
+
+  // Zero out FAT area
+  std::memset(&m_image[1 * SECTOR_SIZE], 0, 10 * SECTOR_SIZE);
+
+  // Restore FAT signatures (First two words: [ID][FF] [FF][0F])
+  for (int fat = 0; fat < 2; ++fat) {
+    uint32_t offset = (1 + (fat * 5)) * SECTOR_SIZE;
+    m_image[offset] = mediaDescriptor;
+    m_image[offset + 1] = 0xFF;
+    m_image[offset + 2] = 0xFF;
+  }
+
+  // 2. Wipe Root Directory (Sectors 11-17)
+  std::memset(&m_image[11 * SECTOR_SIZE], 0, 7 * SECTOR_SIZE);
+
+  // 3. Optional: Wipe Data Area (Sector 18 onwards)
+  // We'll skip this for "Quick Format" speed, but we could zero it if desired.
+
+  qDebug() << "[ENGINE] Disk Formatted. Filesystem reset.";
+  return true;
 }
 
 } // namespace Atari

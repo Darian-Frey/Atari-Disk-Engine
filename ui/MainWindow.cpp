@@ -45,10 +45,10 @@ void MainWindow::setupUi() {
   connect(m_treeView, &QTreeView::customContextMenuRequested, this,
           &MainWindow::onCustomContextMenu);
 
-  // 2. CREATE THE DROP-DOWN FILE MENU
+  // CREATE THE DROP-DOWN FILE MENU
   QMenu *fileMenu = menuBar()->addMenu("&File");
 
-  // 3. CREATE THE DISK MENU
+  // CREATE THE DISK MENU
   QMenu *diskMenu = menuBar()->addMenu("&Disk");
   QAction *infoAction = diskMenu->addAction("Disk &Information");
   infoAction->setShortcut(QKeySequence("Ctrl+I"));
@@ -99,15 +99,20 @@ void MainWindow::setupUi() {
   connect(injectAction, &QAction::triggered, this, &MainWindow::onInjectFile);
   fileMenu->insertAction(extractAction, injectAction);
 
-  // 3. Keep the Toolbar for quick access
+  // Keep the Toolbar for quick access
   QToolBar *toolBar = addToolBar("Main");
   toolBar->addAction(openAction);
 
-  // 4. Status Bar: Displays disk geometry and status messages
+  // Status Bar: Displays disk geometry and status messages
   m_formatLabel = new QLabel("Ready", this);
   statusBar()->addPermanentWidget(m_formatLabel);
 
-  // 5. Add "Make Bootable" to Disk Menu
+  // Format Disk Action
+  QAction *formatAct = diskMenu->addAction("&Format Disk");
+  formatAct->setShortcut(QKeySequence("Ctrl+Shift+F"));
+  connect(formatAct, &QAction::triggered, this, &MainWindow::onFormatDisk);
+
+  // Add "Make Bootable" to Disk Menu
   QAction *fixBootAct = diskMenu->addAction("Make Disk Bootable");
   connect(fixBootAct, &QAction::triggered, this, &MainWindow::onFixBoot);
 
@@ -460,5 +465,29 @@ void MainWindow::onSaveFileAs() {
     statusBar()->showMessage("File extracted to " + savePath, 3000);
   } else {
     QMessageBox::critical(this, "Error", "Could not write to local file.");
+  }
+}
+
+void MainWindow::onFormatDisk() {
+  if (!m_engine->isLoaded())
+    return;
+
+  auto reply =
+      QMessageBox::warning(this, "Confirm Format",
+                           "ARE YOU SURE?\n\nThis will permanently delete ALL "
+                           "files and directories on this virtual disk.",
+                           QMessageBox::Yes | QMessageBox::No);
+
+  if (reply == QMessageBox::Yes) {
+    if (m_engine->formatDisk()) {
+      m_model->refresh();
+      m_hexView->setData(QByteArray()); // Clear the hex viewer cache
+      statusBar()->showMessage("Disk formatted successfully", 5000);
+
+      // Re-run Disk Info to show the new empty state
+      onDiskInfo();
+    } else {
+      QMessageBox::critical(this, "Error", "Format failed.");
+    }
   }
 }

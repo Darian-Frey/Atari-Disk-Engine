@@ -83,6 +83,9 @@ private slots:
   /** @brief Saves the currently selected file to a new file. */
   void onSaveFileAs();
 
+  /** @brief Formats the disk image. */
+  void onFormatDisk();
+
 private:
   /** @brief Initializes UI components, layouts, and signal/slot connections. */
   void setupUi();
