@@ -74,6 +74,9 @@ private slots:
   /** @brief Shows disk information in a dialog. */
   void onDiskInfo();
 
+  /** @brief Fixes the boot sector checksum. */
+  void onFixBoot();
+
 private:
   /** @brief Initializes UI components, layouts, and signal/slot connections. */
   void setupUi();

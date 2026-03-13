@@ -105,6 +105,10 @@ void MainWindow::setupUi() {
   m_formatLabel = new QLabel("Ready", this);
   statusBar()->addPermanentWidget(m_formatLabel);
 
+  // 5. Add "Make Bootable" to Disk Menu
+  QAction *fixBootAct = diskMenu->addAction("Make Disk Bootable");
+  connect(fixBootAct, &QAction::triggered, this, &MainWindow::onFixBoot);
+
   connect(m_treeView, &QTreeView::clicked, this, &MainWindow::onFileSelected);
 
   resize(1100, 750);
@@ -350,15 +354,32 @@ void MainWindow::onDiskInfo() {
     return;
 
   Atari::DiskStats stats = m_engine->getDiskStats();
+  // Assuming you added checkBootSector() to the engine as discussed
+  Atari::BootSectorInfo boot = m_engine->checkBootSector();
 
-  QString info = QString("<b>Disk Geometry:</b> %1<br>"
-                         "<b>Total Size:</b> %2 KB<br>"
-                         "<b>Space Used:</b> %3 KB<br>"
-                         "<b>Space Free:</b> %4 KB<br><br>"
-                         "<b>Files:</b> %5<br>"
-                         "<b>Directories:</b> %6<br><br>"
-                         "<b>Clusters:</b> %7 total (%8 free)<br>"
-                         "<b>Sectors Per Cluster:</b> %9")
+  QString bootStatus =
+      boot.isExecutable
+          ? "<font color='#00AA00'><b>Executable (Bootable)</b></font>"
+          : "<font color='#AA0000'><b>Non-Executable (Data Only)</b></font>";
+
+  QString info = QString("<h3>System & Boot</h3>"
+                         "<b>OEM Signature:</b> %1<br>"
+                         "<b>Boot Status:</b> %2<br>"
+                         "<b>Checksum:</b> %3 (Target: 0x1234)<br>"
+                         "<hr>"
+                         "<h3>Disk Geometry</h3>"
+                         "<b>Mode:</b> %4<br>"
+                         "<b>Total Size:</b> %5 KB<br>"
+                         "<b>Space Used:</b> %6 KB<br>"
+                         "<b>Space Free:</b> %7 KB<br><br>"
+                         "<b>Files:</b> %8 | <b>Directories:</b> %9<br>"
+                         "<b>Clusters:</b> %10 total (%11 free)<br>"
+                         "<b>Sectors Per Cluster:</b> %12")
+                     .arg(boot.oemName.isEmpty() ? "None" : boot.oemName)
+                     .arg(bootStatus)
+                     .arg(QString("0x%1")
+                              .arg(boot.currentChecksum, 4, 16, QChar('0'))
+                              .toUpper())
                      .arg((m_engine->getGeometryMode() ==
                            Atari::AtariDiskEngine::GeometryMode::BPB)
                               ? "Standard (BPB)"
@@ -373,4 +394,19 @@ void MainWindow::onDiskInfo() {
                      .arg(stats.sectorsPerCluster);
 
   QMessageBox::information(this, "Atari ST Disk Information", info);
+}
+
+void MainWindow::onFixBoot() {
+  if (!m_engine->isLoaded())
+    return;
+
+  if (m_engine->fixBootChecksum()) {
+    QMessageBox::information(
+        this, "Success",
+        "Boot sector checksum adjusted to 0x1234.\nThis disk is now bootable.");
+    // Refresh display if needed
+    onDiskInfo();
+  } else {
+    QMessageBox::critical(this, "Error", "Failed to modify boot sector.");
+  }
 }

@@ -704,4 +704,66 @@ Atari::DiskStats Atari::AtariDiskEngine::getDiskStats() const {
   return stats;
 }
 
+Atari::BootSectorInfo Atari::AtariDiskEngine::checkBootSector() const {
+  BootSectorInfo info;
+  info.expectedChecksum = 0x1234;
+  info.isExecutable = false;
+  info.hasValidBpb = false;
+
+  if (m_image.size() < 512)
+    return info;
+
+  const uint8_t *boot = m_image.data();
+
+  // 1. Extract OEM Name (Bytes 2-7)
+  char oem[7] = {0};
+  std::memcpy(oem, boot + 2, 6);
+  info.oemName = QString::fromLatin1(oem).trimmed();
+
+  // 2. Simple BPB Validation (Reserved sectors check)
+  uint16_t reserved = readLE16(boot + 0x0E);
+  if (reserved > 0 && reserved < 10)
+    info.hasValidBpb = true;
+
+  // 3. Calculate Atari 16-bit Checksum (Word-wise)
+  uint16_t sum = 0;
+  for (int i = 0; i < 256; ++i) {
+    // Atari ST is Big-Endian for code/checksums
+    uint16_t word = (boot[i * 2] << 8) | boot[i * 2 + 1];
+    sum += word;
+  }
+
+  info.currentChecksum = sum;
+  info.isExecutable = (sum == 0x1234);
+
+  return info;
+}
+
+bool Atari::AtariDiskEngine::fixBootChecksum() {
+  if (m_image.size() < 512)
+    return false;
+
+  uint8_t *boot = m_image.data();
+  uint16_t runningSum = 0;
+
+  // 1. Calculate sum of the first 255 words (0 to 509 bytes)
+  for (int i = 0; i < 255; ++i) {
+    uint16_t word = (boot[i * 2] << 8) | boot[i * 2 + 1];
+    runningSum += word;
+  }
+
+  // 2. Calculate the 'diff' needed to reach 0x1234
+  // Target = runningSum + finalWord
+  // 0x1234 - runningSum = finalWord
+  uint16_t finalWord = 0x1234 - runningSum;
+
+  // 3. Write the adjustment word to the last two bytes (Big Endian)
+  boot[510] = (finalWord >> 8) & 0xFF;
+  boot[511] = finalWord & 0xFF;
+
+  qDebug() << "[ENGINE] Boot Checksum Fixed. Final Word set to:" << hex
+           << finalWord;
+  return true;
+}
+
 } // namespace Atari

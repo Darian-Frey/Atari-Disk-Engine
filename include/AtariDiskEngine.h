@@ -106,6 +106,14 @@ struct DirEntry {
   std::string getFilename() const;
 };
 
+struct BootSectorInfo {
+  bool hasValidBpb;
+  bool isExecutable;
+  uint16_t currentChecksum;
+  uint16_t expectedChecksum; // 0x1234
+  QString oemName;
+};
+
 /**
  * @class AtariDiskEngine
  * @brief Engine for reading, writing, and manipulating Atari ST floppy disk
@@ -146,9 +154,16 @@ public:
    */
   QByteArray readFileQt(const DirEntry &entry) const;
 
+  /** @brief Checks the boot sector for validity and executable status. */
+  BootSectorInfo checkBootSector() const;
+
   /** @return Const reference to the raw disk image data. */
   const std::vector<uint8_t> &getRawImageData() const { return m_image; }
 
+  /** @brief Fixes the boot sector checksum to make the disk executable. */
+  bool fixBootChecksum();
+
+  /** @brief Validates checksum for an arbitrary 512-byte buffer. */
   AtariDiskEngine() = default;
 
   /** @brief Constructs an engine with existing image data. */
