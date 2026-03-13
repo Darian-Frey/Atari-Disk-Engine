@@ -64,3 +64,21 @@ void HexViewWidget::setBuffer(const uint8_t *data, int size, int sectorIndex) {
 void HexViewWidget::setData(const QByteArray &data) {
   setBuffer(reinterpret_cast<const uint8_t *>(data.constData()), data.size());
 }
+
+void HexViewWidget::scrollToOffset(int offset) {
+  int blockOffset = (offset / 16) * 16;
+  QString targetHex = QStringLiteral("%1").arg(blockOffset, 8, 16, QLatin1Char('0')).toUpper();
+  
+  QTextDocument *doc = m_textEdit->document();
+  QTextCursor cursor = doc->find(targetHex);
+  
+  if (!cursor.isNull()) {
+    // Select the specific byte? We can just move the cursor there.
+    // The hex display starts after "OFFSET  " (10 chars), and each byte is 3 chars.
+    int byteIndex = offset % 16;
+    cursor.movePosition(QTextCursor::NextCharacter, QTextCursor::MoveAnchor, 10 + (byteIndex * 3));
+    
+    m_textEdit->setTextCursor(cursor);
+    m_textEdit->ensureCursorVisible();
+  }
+}

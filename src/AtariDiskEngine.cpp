@@ -976,8 +976,8 @@ Atari::ClusterMap Atari::AtariDiskEngine::getClusterMap() const {
 
   uint32_t fatOffset = 1 * SECTOR_SIZE; // Standard Atari FAT location
   int sectorsPerCluster = (m_geoMode == GeometryMode::HatariGuess) ? 1 : 2;
-  map.totalClusters = (m_image.size() - (18 * SECTOR_SIZE)) /
-                      (sectorsPerCluster * SECTOR_SIZE);
+  map.totalClusters =
+      (m_image.size() - (18 * SECTOR_SIZE)) / (sectorsPerCluster * SECTOR_SIZE);
   map.clusters.resize(map.totalClusters);
 
   for (int i = 0; i < map.totalClusters; ++i) {
@@ -1002,6 +1002,48 @@ Atari::ClusterMap Atari::AtariDiskEngine::getClusterMap() const {
       map.clusters[i] = ClusterStatus::Used;
   }
   return map;
+}
+
+/**
+ * @brief Searches for a byte pattern in the disk image.
+ **/
+QVector<Atari::SearchResult>
+Atari::AtariDiskEngine::searchPattern(const QByteArray &pattern) const {
+  QVector<SearchResult> results;
+
+  // std::vector uses .empty(), QByteArray uses .isEmpty()
+  if (pattern.isEmpty() || m_image.empty())
+    return results;
+
+  const unsigned char *searchStart =
+      reinterpret_cast<const unsigned char *>(pattern.constData());
+  const unsigned char *searchEnd = searchStart + pattern.size();
+
+  auto it = m_image.begin();
+  while (true) {
+    // Use std::search to find the pattern in the std::vector
+    it = std::search(it, m_image.end(), searchStart, searchEnd);
+
+    if (it == m_image.end())
+      break;
+
+    // Calculate offsets
+    uint32_t offset = std::distance(m_image.begin(), it);
+
+    SearchResult res;
+    res.offset = offset;
+    res.sector = offset / SECTOR_SIZE;
+    res.offsetInSector = offset % SECTOR_SIZE;
+    results.append(res);
+
+    if (results.size() >= 100)
+      break; // Safety cap
+
+    // Move iterator forward to continue search
+    std::advance(it, 1);
+  }
+
+  return results;
 }
 
 } // namespace Atari

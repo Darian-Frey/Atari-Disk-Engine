@@ -122,6 +122,12 @@ struct ClusterMap {
   int totalClusters;
 };
 
+struct SearchResult {
+  uint32_t offset;
+  int sector;
+  int offsetInSector;
+};
+
 /**
  * @class AtariDiskEngine
  * @brief Engine for reading, writing, and manipulating Atari ST floppy disk
@@ -234,6 +240,9 @@ public:
 
   /** @brief Gets a map of all clusters on the disk. */
   ClusterMap getClusterMap() const;
+
+  /** @brief Searches for a byte pattern in the disk image. */
+  QVector<SearchResult> searchPattern(const QByteArray &pattern) const;
 
 private:
   /** @brief Checks if a block of data appears to be a valid directory entry. */

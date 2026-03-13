@@ -11,6 +11,7 @@
 #include <QInputDialog>
 #include <QKeySequence>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -119,6 +120,11 @@ void MainWindow::setupUi() {
   // FAT Map Action
   QAction *fatMapAct = diskMenu->addAction("View &FAT Map");
   connect(fatMapAct, &QAction::triggered, this, &MainWindow::onViewFatTable);
+
+  // Search Action
+  QAction *searchAct = diskMenu->addAction("&Search Disk...");
+  searchAct->setShortcut(QKeySequence::Find); // Ctrl+F
+  connect(searchAct, &QAction::triggered, this, &MainWindow::onSearchDisk);
 
   // Add "Make Bootable" to Disk Menu
   QAction *fixBootAct = diskMenu->addAction("Make Disk Bootable");
@@ -635,6 +641,62 @@ void MainWindow::onViewFatTable() {
 
   dlg->exec();
 }
+
+void MainWindow::onSearchDisk() {
+  if (!m_engine->isLoaded())
+    return;
+
+  bool ok;
+  QString searchTerm = QInputDialog::getText(
+      this, "Disk Search", "Enter Text or Hex (0x...):", QLineEdit::Normal, "",
+      &ok);
+  if (!ok || searchTerm.isEmpty())
+    return;
+
+  QByteArray pattern;
+  if (searchTerm.startsWith("0x")) {
+    // Hex Search: 0x601A -> \x60\x1A
+    pattern = QByteArray::fromHex(searchTerm.mid(2).toUtf8());
+  } else {
+    // ASCII Search
+    pattern = searchTerm.toUtf8();
+  }
+
+  QVector<Atari::SearchResult> results = m_engine->searchPattern(pattern);
+
+  if (results.isEmpty()) {
+    QMessageBox::information(this, "Search", "No matches found.");
+    return;
+  }
+
+  // Display Results in a list
+  QDialog dlg(this);
+  dlg.setWindowTitle("Search Results");
+  dlg.resize(400, 300);
+  QVBoxLayout *layout = new QVBoxLayout(&dlg);
+  QListWidget *list = new QListWidget(&dlg);
+
+  for (const auto &res : results) {
+    list->addItem(QString("Sector %1 (Offset %2) [Total: 0x%3]")
+                      .arg(res.sector)
+                      .arg(res.offsetInSector)
+                      .arg(QString::number(res.offset, 16).toUpper()));
+  }
+
+  layout->addWidget(
+      new QLabel(QString("Found %1 matches:").arg(results.size())));
+  layout->addWidget(list);
+
+  // Bonus: If user double-clicks a result, jump to it in the Hex View
+  connect(list, &QListWidget::itemDoubleClicked, [&](QListWidgetItem *item) {
+    int idx = list->row(item);
+    m_hexView->scrollToOffset(results[idx].offset);
+    dlg.accept();
+  });
+
+  dlg.exec();
+}
+
 // Helper for decimal formatting
 QString MainWindow::formatPercent(double value, int precision) {
   return QString::number(value, 'f', precision);

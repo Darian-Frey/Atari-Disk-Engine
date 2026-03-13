@@ -92,6 +92,9 @@ private slots:
   /** @brief Views the FAT table. */
   void onViewFatTable();
 
+  /** @brief Searches for a byte pattern in the disk image. */
+  void onSearchDisk();
+
 private:
   /** @brief Initializes UI components, layouts, and signal/slot connections. */
   void setupUi();

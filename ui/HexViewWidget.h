@@ -19,6 +19,7 @@ public:
    */
   void setBuffer(const uint8_t *data, int size, int sectorIndex = -1);
   void setData(const QByteArray &data);
+  void scrollToOffset(int offset);
 
 private:
   QPlainTextEdit *m_textEdit;
