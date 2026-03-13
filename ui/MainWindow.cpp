@@ -313,11 +313,10 @@ void MainWindow::onCustomContextMenu(const QPoint &pos) {
     return;
 
   QMenu contextMenu(this);
-
-  // New Rename Option
+  contextMenu.addAction("Save File As...", this,
+                        &MainWindow::onSaveFileAs); // New
+  contextMenu.addSeparator();
   contextMenu.addAction("Rename File", this, &MainWindow::onRenameFile);
-
-  // Existing Delete Option (Refactored to match)
   contextMenu.addAction("Delete File", this, &MainWindow::onDeleteFile);
 
   contextMenu.exec(m_treeView->mapToGlobal(pos));
@@ -436,5 +435,30 @@ void MainWindow::onRenameFile() {
       QMessageBox::critical(
           this, "Error", "Could not rename file. Is the disk write-protected?");
     }
+  }
+}
+
+void MainWindow::onSaveFileAs() {
+  QModelIndex index = m_treeView->currentIndex();
+  if (!index.isValid())
+    return;
+
+  Atari::DirEntry entry = m_model->getEntry(index);
+  QString fileName = Atari::AtariDiskEngine::toQString(entry.getFilename());
+
+  QString savePath =
+      QFileDialog::getSaveFileName(this, "Extract File", fileName);
+  if (savePath.isEmpty())
+    return;
+
+  QByteArray fileData = m_engine->getFileData(entry);
+
+  QFile file(savePath);
+  if (file.open(QIODevice::WriteOnly)) {
+    file.write(fileData);
+    file.close();
+    statusBar()->showMessage("File extracted to " + savePath, 3000);
+  } else {
+    QMessageBox::critical(this, "Error", "Could not write to local file.");
   }
 }

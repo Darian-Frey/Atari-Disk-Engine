@@ -801,4 +801,41 @@ bool Atari::AtariDiskEngine::renameFile(const DirEntry &entry,
   return found;
 }
 
+QByteArray Atari::AtariDiskEngine::getFileData(const DirEntry &entry) const {
+  QByteArray data;
+  if (!isLoaded() || entry.getFileSize() == 0)
+    return data;
+
+  uint16_t current = entry.getStartCluster();
+  uint32_t bytesRemaining = entry.getFileSize();
+  uint32_t fatOffset = 1 * SECTOR_SIZE;
+  uint32_t dataStartOffset = 18 * SECTOR_SIZE;
+  int sectorsPerCluster = (m_geoMode == GeometryMode::HatariGuess) ? 1 : 2;
+  uint32_t clusterSize = sectorsPerCluster * SECTOR_SIZE;
+
+  while (current >= 2 && current < 0xFF0 && bytesRemaining > 0) {
+    // Calculate physical offset in image
+    uint32_t physOffset = dataStartOffset + ((current - 2) * clusterSize);
+    uint32_t toRead = std::min(bytesRemaining, clusterSize);
+
+    data.append(reinterpret_cast<const char *>(&m_image[physOffset]), toRead);
+    bytesRemaining -= toRead;
+
+    // Fetch next cluster from FAT12
+    uint32_t idx = (current * 3) / 2;
+    if (current % 2 == 0) {
+      current = m_image[fatOffset + idx] |
+                ((m_image[fatOffset + idx + 1] & 0x0F) << 8);
+    } else {
+      current =
+          (m_image[fatOffset + idx] >> 4) | (m_image[fatOffset + idx + 1] << 4);
+    }
+
+    if (current >= 0xFF8)
+      break; // End of Chain
+  }
+
+  return data;
+}
+
 } // namespace Atari

@@ -80,6 +80,9 @@ private slots:
   /** @brief Renames the currently selected file. */
   void onRenameFile();
 
+  /** @brief Saves the currently selected file to a new file. */
+  void onSaveFileAs();
+
 private:
   /** @brief Initializes UI components, layouts, and signal/slot connections. */
   void setupUi();
