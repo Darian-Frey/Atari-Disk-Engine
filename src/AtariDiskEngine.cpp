@@ -966,4 +966,42 @@ bool Atari::AtariDiskEngine::setOemLabel(const QString &newLabel) {
   return true;
 }
 
+/**
+ * @brief Gets a map of all clusters on the disk.
+ **/
+Atari::ClusterMap Atari::AtariDiskEngine::getClusterMap() const {
+  ClusterMap map;
+  if (!isLoaded())
+    return map;
+
+  uint32_t fatOffset = 1 * SECTOR_SIZE; // Standard Atari FAT location
+  int sectorsPerCluster = (m_geoMode == GeometryMode::HatariGuess) ? 1 : 2;
+  map.totalClusters = (m_image.size() - (18 * SECTOR_SIZE)) /
+                      (sectorsPerCluster * SECTOR_SIZE);
+  map.clusters.resize(map.totalClusters);
+
+  for (int i = 0; i < map.totalClusters; ++i) {
+    // FAT12 decoding logic
+    uint32_t idx = (i * 3) / 2;
+    uint16_t value;
+    if (i % 2 == 0) {
+      value = m_image[fatOffset + idx] |
+              ((m_image[fatOffset + idx + 1] & 0x0F) << 8);
+    } else {
+      value =
+          (m_image[fatOffset + idx] >> 4) | (m_image[fatOffset + idx + 1] << 4);
+    }
+
+    if (value == 0x000)
+      map.clusters[i] = ClusterStatus::Free;
+    else if (value >= 0xFF8)
+      map.clusters[i] = ClusterStatus::EndOfChain;
+    else if (value == 0xFF7)
+      map.clusters[i] = ClusterStatus::Bad;
+    else
+      map.clusters[i] = ClusterStatus::Used;
+  }
+  return map;
+}
+
 } // namespace Atari

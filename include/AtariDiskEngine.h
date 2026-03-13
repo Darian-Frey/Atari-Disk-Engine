@@ -8,6 +8,7 @@
 
 #include <QByteArray>
 #include <QString>
+#include <QVector>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -112,6 +113,13 @@ struct BootSectorInfo {
   uint16_t currentChecksum;
   uint16_t expectedChecksum; // 0x1234
   QString oemName;
+};
+
+enum class ClusterStatus { Free, Used, Bad, EndOfChain };
+
+struct ClusterMap {
+  QVector<ClusterStatus> clusters;
+  int totalClusters;
 };
 
 /**
@@ -223,6 +231,9 @@ public:
 
   /** @brief Sets the OEM label of the disk image. */
   bool setOemLabel(const QString &newLabel);
+
+  /** @brief Gets a map of all clusters on the disk. */
+  ClusterMap getClusterMap() const;
 
 private:
   /** @brief Checks if a block of data appears to be a valid directory entry. */

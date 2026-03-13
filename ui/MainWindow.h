@@ -89,6 +89,9 @@ private slots:
   /** @brief Edits the OEM label of the disk image. */
   void onEditOemLabel();
 
+  /** @brief Views the FAT table. */
+  void onViewFatTable();
+
 private:
   /** @brief Initializes UI components, layouts, and signal/slot connections. */
   void setupUi();
@@ -100,6 +103,8 @@ private:
       nullptr; /**< Custom widget for viewing raw sector data. */
   QLabel *m_formatLabel =
       nullptr; /**< Status label showing disk geometry information. */
+
+  QString formatPercent(double value, int precision);
 
   // Logic Members
   Atari::AtariDiskEngine *m_engine =

@@ -116,6 +116,10 @@ void MainWindow::setupUi() {
   QAction *oemAct = diskMenu->addAction("Edit &OEM Label...");
   connect(oemAct, &QAction::triggered, this, &MainWindow::onEditOemLabel);
 
+  // FAT Map Action
+  QAction *fatMapAct = diskMenu->addAction("View &FAT Map");
+  connect(fatMapAct, &QAction::triggered, this, &MainWindow::onViewFatTable);
+
   // Add "Make Bootable" to Disk Menu
   QAction *fixBootAct = diskMenu->addAction("Make Disk Bootable");
   connect(fixBootAct, &QAction::triggered, this, &MainWindow::onFixBoot);
@@ -518,4 +522,120 @@ void MainWindow::onEditOemLabel() {
       QMessageBox::critical(this, "Error", "Could not update Boot Sector.");
     }
   }
+}
+
+void MainWindow::onViewFatTable() {
+  if (!m_engine->isLoaded())
+    return;
+
+  Atari::ClusterMap map = m_engine->getClusterMap();
+  Atari::DiskStats stats = m_engine->getDiskStats();
+
+  QDialog *dlg = new QDialog(this);
+  dlg->setWindowTitle("Advanced Disk Map & FAT Analysis");
+  dlg->resize(700, 500);
+
+  QHBoxLayout *mainLayout = new QHBoxLayout(dlg);
+
+  // --- LEFT SIDE: THE MAP (Using Table for rendering stability) ---
+  QTextEdit *mapView = new QTextEdit(dlg);
+  mapView->setReadOnly(true);
+  mapView->setFont(QFont("Monospace", 10));
+
+  // We use a table because Qt's HTML engine handles cell borders more reliably
+  // than spans
+  QString html = "<h3>Cluster Usage Map</h3>"
+                 "<table cellspacing='1' cellpadding='0' "
+                 "style='border-collapse: separate;'>";
+
+  for (int i = 0; i < map.clusters.size(); ++i) {
+    if (i % 32 == 0)
+      html += "<tr>";
+
+    QString color;
+    QString tip;
+    switch (map.clusters[i]) {
+    case Atari::ClusterStatus::Free:
+      color = "#EEEEEE";
+      tip = "Free";
+      break;
+    case Atari::ClusterStatus::Used:
+      color = "#3498DB";
+      tip = "Used";
+      break;
+    case Atari::ClusterStatus::EndOfChain:
+      color = "#F1C40F";
+      tip = "EOF";
+      break;
+    case Atari::ClusterStatus::Bad:
+      color = "#E74C3C";
+      tip = "Bad";
+      break;
+    }
+
+    // Width and Height are set as attributes, bgcolor for the fill,
+    // and style for the black 'out line'
+    html += QString("<td width='12' height='12' bgcolor='%1' "
+                    "style='border: 1px solid black;' title='Cluster %2: "
+                    "%3'>&nbsp;</td>")
+                .arg(color)
+                .arg(i + 2)
+                .arg(tip);
+
+    if ((i + 1) % 32 == 0)
+      html += "</tr>";
+  }
+
+  if (map.clusters.size() % 32 != 0)
+    html += "</tr>";
+  html += "</table>";
+  mapView->setHtml(html);
+
+  // --- RIGHT SIDE: THE INFO PANEL ---
+  QWidget *infoPanel = new QWidget(dlg);
+  QVBoxLayout *infoLayout = new QVBoxLayout(infoPanel);
+
+  QLabel *statsLabel = new QLabel(
+      QString("<h4>Disk Health</h4>"
+              "<b>Total Clusters:</b> %1<br>"
+              "<b>Used:</b> %2<br>"
+              "<b>Free:</b> %3<br>"
+              "<b>Capacity Used:</b> %4%<br>"
+              "<hr>"
+              "<h4>Geometry</h4>"
+              "<b>Cluster Size:</b> %5 bytes<br>"
+              "<b>Data Start:</b> Sector 18<br>"
+              "<b>FAT Type:</b> FAT12 (Atari)")
+          .arg(map.totalClusters)
+          .arg(map.totalClusters - stats.freeClusters)
+          .arg(stats.freeClusters)
+          .arg(formatPercent(
+              (1.0 - (double)stats.freeClusters / map.totalClusters) * 100, 1))
+          .arg(stats.sectorsPerCluster * 512));
+
+  infoLayout->addWidget(statsLabel);
+  infoLayout->addStretch();
+
+  // Legend - Also using fixed widths to ensure visibility
+  infoLayout->addWidget(new QLabel(
+      "<b>Legend:</b><br>"
+      "<table cellspacing='2'>"
+      "<tr><td width='12' height='12' bgcolor='#3498DB' style='border:1px "
+      "solid black;'></td><td>Data Cluster</td></tr>"
+      "<tr><td width='12' height='12' bgcolor='#F1C40F' style='border:1px "
+      "solid black;'></td><td>Last Cluster (EOF)</td></tr>"
+      "<tr><td width='12' height='12' bgcolor='#EEEEEE' style='border:1px "
+      "solid black;'></td><td>Empty Space</td></tr>"
+      "<tr><td width='12' height='12' bgcolor='#E74C3C' style='border:1px "
+      "solid black;'></td><td>Bad Sector</td></tr>"
+      "</table>"));
+
+  mainLayout->addWidget(mapView, 2);
+  mainLayout->addWidget(infoPanel, 1);
+
+  dlg->exec();
+}
+// Helper for decimal formatting
+QString MainWindow::formatPercent(double value, int precision) {
+  return QString::number(value, 'f', precision);
 }
