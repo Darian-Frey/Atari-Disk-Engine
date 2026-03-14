@@ -16,14 +16,13 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QSplitter>
+#include <QToolBar>
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) { setupUi(); }
 
 void MainWindow::setupUi() {
   /**
    * Initializes the core logic engine and the filesystem model.
-   * The model acts as the glue between the Atari FAT12 structures and the Qt
-   * TreeView.
    */
   m_engine = new Atari::AtariDiskEngine();
   m_model = new AtariFileSystemModel(this);
@@ -38,7 +37,7 @@ void MainWindow::setupUi() {
   m_hexView = new HexViewWidget(this);
   splitter->addWidget(m_treeView);
   splitter->addWidget(m_hexView);
-  splitter->setStretchFactor(1, 1); // Allow hex view to expand more than tree
+  splitter->setStretchFactor(1, 1);
   setCentralWidget(splitter);
 
   // Enable context menu for the tree view
@@ -46,42 +45,36 @@ void MainWindow::setupUi() {
   connect(m_treeView, &QTreeView::customContextMenuRequested, this,
           &MainWindow::onCustomContextMenu);
 
-  // CREATE THE DROP-DOWN FILE MENU
+  // --- MENUS ---
   QMenu *fileMenu = menuBar()->addMenu("&File");
-
-  // CREATE THE DISK MENU
   QMenu *diskMenu = menuBar()->addMenu("&Disk");
-  QAction *infoAction = diskMenu->addAction("Disk &Information");
-  infoAction->setShortcut(QKeySequence("Ctrl+I"));
-  connect(infoAction, &QAction::triggered, this, &MainWindow::onDiskInfo);
 
-  // Open Action: Loads an image from disk
+  // --- ACTIONS ---
   QAction *openAction =
       new QAction(QIcon::fromTheme("document-open"), "&Open Disk...", this);
   openAction->setShortcut(QKeySequence::Open);
   connect(openAction, &QAction::triggered, this, &MainWindow::onOpenFile);
   fileMenu->addAction(openAction);
 
-  // Close Action: Resets the state
+  QAction *infoAction = diskMenu->addAction("Disk &Information");
+  infoAction->setShortcut(QKeySequence("Ctrl+I"));
+  connect(infoAction, &QAction::triggered, this, &MainWindow::onDiskInfo);
+
   QAction *closeAction = new QAction("&Close Image", this);
   connect(closeAction, &QAction::triggered, this, &MainWindow::onCloseFile);
 
-  // Save Action: Writes current memory image to a file
   QAction *saveAction = new QAction("&Save Disk As...", this);
   saveAction->setShortcut(QKeySequence::Save);
   connect(saveAction, &QAction::triggered, this, &MainWindow::onSaveDisk);
   fileMenu->addAction(saveAction);
   fileMenu->insertAction(closeAction, saveAction);
-
   fileMenu->addAction(closeAction);
 
-  // Extract Action: Saves selected file to host system
   QAction *extractAction = new QAction("&Extract Selected File...", this);
   extractAction->setShortcut(QKeySequence(Qt::CTRL + Qt::Key_E));
   connect(extractAction, &QAction::triggered, this, &MainWindow::onExtractFile);
   fileMenu->addAction(extractAction);
 
-  // New Disk Action: Creates a blank 720K template
   QAction *newAction = new QAction("&New 720K Disk", this);
   newAction->setShortcut(QKeySequence::New);
   connect(newAction, &QAction::triggered, this, &MainWindow::onNewDisk);
@@ -89,44 +82,45 @@ void MainWindow::setupUi() {
 
   fileMenu->addSeparator();
 
-  // Exit Action
   QAction *exitAction = new QAction("E&xit", this);
   exitAction->setShortcut(QKeySequence::Quit);
   connect(exitAction, &QAction::triggered, this, &QWidget::close);
   fileMenu->addAction(exitAction);
 
-  // Inject Action: Inserts a local file into the disk
   QAction *injectAction = new QAction("&Inject File TO Disk...", this);
   connect(injectAction, &QAction::triggered, this, &MainWindow::onInjectFile);
   fileMenu->insertAction(extractAction, injectAction);
 
-  // Keep the Toolbar for quick access
-  QToolBar *toolBar = addToolBar("Main");
-  toolBar->addAction(openAction);
+  // --- TOOLBAR SETUP ---
+  // Fix: Create the toolbar object FIRST before using it
+  QToolBar *mainToolBar = addToolBar("Main");
+  mainToolBar->addAction(openAction);
 
-  // Status Bar: Displays disk geometry and status messages
+  // Now we can safely add the View Full Disk toggle
+  m_viewFullDiskAction = mainToolBar->addAction("View Full Disk");
+  m_viewFullDiskAction->setCheckable(true);
+  m_viewFullDiskAction->setChecked(false); // Default to Boot Sector for speed
+  connect(m_viewFullDiskAction, &QAction::toggled, this,
+          &MainWindow::onToggleHexViewMode);
+
+  // --- DISK TOOLS ---
   m_formatLabel = new QLabel("Ready", this);
   statusBar()->addPermanentWidget(m_formatLabel);
 
-  // Format Disk Action
   QAction *formatAct = diskMenu->addAction("&Format Disk");
   formatAct->setShortcut(QKeySequence("Ctrl+Shift+F"));
   connect(formatAct, &QAction::triggered, this, &MainWindow::onFormatDisk);
 
-  // OEM Label Action
   QAction *oemAct = diskMenu->addAction("Edit &OEM Label...");
   connect(oemAct, &QAction::triggered, this, &MainWindow::onEditOemLabel);
 
-  // FAT Map Action
   QAction *fatMapAct = diskMenu->addAction("View &FAT Map");
   connect(fatMapAct, &QAction::triggered, this, &MainWindow::onViewFatTable);
 
-  // Search Action
   QAction *searchAct = diskMenu->addAction("&Search Disk...");
-  searchAct->setShortcut(QKeySequence::Find); // Ctrl+F
+  searchAct->setShortcut(QKeySequence::Find);
   connect(searchAct, &QAction::triggered, this, &MainWindow::onSearchDisk);
 
-  // Add "Make Bootable" to Disk Menu
   QAction *fixBootAct = diskMenu->addAction("Make Disk Bootable");
   connect(fixBootAct, &QAction::triggered, this, &MainWindow::onFixBoot);
 
@@ -170,14 +164,14 @@ void MainWindow::onOpenFile() {
     m_treeView->expandAll();
     m_formatLabel->setText(m_engine->getFormatInfoString());
 
-    // 2. FIX: Load the FULL buffer so Search can navigate the whole disk
-    // We use your setDiskData method and pass the engine's internal vector
-    m_hexView->setDiskData(m_engine->getFullImageBuffer());
+    // 2. Updated: Use the centralized display logic
+    // This respects whether m_isFullDiskMode is true or false
+    updateHexDisplay();
 
     // 3. Reset view to top
     m_hexView->scrollToOffset(0);
 
-    qDebug() << "[UI] File loaded and full hex buffer populated.";
+    qDebug() << "[UI] File loaded. Hex view mode applied.";
   }
 }
 
@@ -662,10 +656,8 @@ void MainWindow::onSearchDisk() {
 
   QByteArray pattern;
   if (searchTerm.startsWith("0x")) {
-    // Hex Search: 0x601A -> \x60\x1A
     pattern = QByteArray::fromHex(searchTerm.mid(2).toUtf8());
   } else {
-    // ASCII Search
     pattern = searchTerm.toUtf8();
   }
 
@@ -676,7 +668,6 @@ void MainWindow::onSearchDisk() {
     return;
   }
 
-  // Display Results in a list
   QDialog dlg(this);
   dlg.setWindowTitle("Search Results");
   dlg.resize(400, 300);
@@ -694,19 +685,32 @@ void MainWindow::onSearchDisk() {
       new QLabel(QString("Found %1 matches:").arg(results.size())));
   layout->addWidget(list);
 
+  // Updated Lambda with Smart Mode Switching
   connect(list, &QListWidget::itemDoubleClicked,
           [this, results, &dlg, list](QListWidgetItem *item) {
             int row = list->row(item);
             if (row >= 0 && row < results.size()) {
+
+              // 1. SMART UI SYNC
+              // If we are in Boot Mode, trigger the toolbar button
+              // programmatically
+              if (!this->m_isFullDiskMode) {
+                if (this->m_viewFullDiskAction) {
+                  // This call triggers the 'toggled' signal, which calls
+                  // updateHexDisplay()
+                  this->m_viewFullDiskAction->setChecked(true);
+                } else {
+                  // Fallback if action isn't linked
+                  this->m_isFullDiskMode = true;
+                  this->updateHexDisplay();
+                }
+              }
+
+              // 2. Perform the jump
               uint32_t targetOffset = results[row].offset;
-
-              // Use the hex view pointer directly
               this->m_hexView->scrollToOffset(targetOffset);
-
-              // Force the Hex View to be the active widget
               this->m_hexView->setFocus();
 
-              // Close the dialog so you can see the results immediately
               dlg.accept();
             }
           });
@@ -717,4 +721,34 @@ void MainWindow::onSearchDisk() {
 // Helper for decimal formatting
 QString MainWindow::formatPercent(double value, int precision) {
   return QString::number(value, 'f', precision);
+}
+
+void MainWindow::updateHexDisplay() {
+  // Safety check: Ensure engine exists and a disk is actually loaded
+  if (!m_engine || !m_engine->isLoaded()) {
+    qDebug() << "[UI] updateHexDisplay aborted: No disk loaded.";
+    return;
+  }
+
+  if (m_isFullDiskMode) {
+    // Populates the view with the entire 360KB/720KB image
+    m_hexView->setDiskData(m_engine->getFullImageBuffer());
+    qDebug() << "[UI] Hex View: FULL DISK MODE ("
+             << m_engine->getFullImageBuffer().size() << " bytes)";
+  } else {
+    // Populates the view with just the 512-byte Boot Sector (Sector 0)
+    m_hexView->setData(m_engine->getSector(0));
+    qDebug() << "[UI] Hex View: BOOT SECTOR MODE (512 bytes)";
+  }
+}
+
+void MainWindow::onToggleHexViewMode(bool fullDisk) {
+  m_isFullDiskMode = fullDisk;
+  updateHexDisplay();
+
+  // Optional: Update the button text to show current state
+  if (m_viewFullDiskAction) {
+    m_viewFullDiskAction->setText(fullDisk ? "Viewing: Full Disk"
+                                           : "Viewing: Boot Sector");
+  }
 }

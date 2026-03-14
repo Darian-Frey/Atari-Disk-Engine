@@ -95,9 +95,13 @@ private slots:
   /** @brief Searches for a byte pattern in the disk image. */
   void onSearchDisk();
 
+  /** @brief Toggles the hex view mode between full disk and sector view. */
+  void onToggleHexViewMode(bool fullDisk);
+
 private:
   /** @brief Initializes UI components, layouts, and signal/slot connections. */
   void setupUi();
+  void updateHexDisplay();
 
   // UI Widgets
   QTreeView *m_treeView =
@@ -108,6 +112,11 @@ private:
       nullptr; /**< Status label showing disk geometry information. */
 
   QString formatPercent(double value, int precision);
+
+  /** @brief Updates the hex view based on the current mode (Full Disk or
+   * Sector). */
+  bool m_isFullDiskMode = false;
+  QAction *m_viewFullDiskAction = nullptr;
 
   // Logic Members
   Atari::AtariDiskEngine *m_engine =
